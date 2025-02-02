@@ -532,13 +532,47 @@ class KCN(Request, WebSocket):
         """Export from get_api_v2_symbols baseIncrement by baseCurrency."""
         return Ok({d["baseCurrency"]: d["baseIncrement"] for d in data["data"]})
 
+    def export_account_usdt_from_api_v3_margin_accounts(
+        self: Self,
+        data: dict,
+    ) -> Result[dict, Exception]:
+        """."""
+        try:
+            for i in [i for i in data["data"]["accounts"] if i["currency"] == "USDT"]:
+                return Ok(i)
+            return Err(Exception("Not found USDT in accounts data"))
+        except (AttributeError, KeyError) as exc:
+            return Err(exc)
+
+    def export_liability_usdt(
+        self: Self,
+        data: dict,
+    ) -> Result[Decimal, Exception]:
+        """Export liability and available USDT from api_v3_margin_accounts."""
+        return Ok(Decimal(data["liability"]))
+
+    def export_available_usdt(
+        self: Self,
+        data: dict,
+    ) -> Result[Decimal, Exception]:
+        """Export liability and available USDT from api_v3_margin_accounts."""
+        return Ok(Decimal(data["available"]))
+
     async def alertest(self: Self) -> Result[None, Exception]:
         """Alert statistic."""
         logger.info("alertest")
-        t = await self.get_api_v3_margin_accounts(
-            params={
-                "quoteCurrency": "USDT",
-            },
+        t = await do_async(
+            Ok(f"{liability=}:{available=}")
+            for api_v3_margin_accounts in await self.get_api_v3_margin_accounts(
+                params={
+                    "quoteCurrency": "USDT",
+                },
+            )
+            for accounts_data in self.export_account_usdt_from_api_v3_margin_accounts(
+                api_v3_margin_accounts,
+            )
+            for liability in self.export_liability_usdt(accounts_data)
+            for available in self.export_available_usdt(accounts_data)
         )
         logger.info(t)
         await asyncio.sleep(1000)
