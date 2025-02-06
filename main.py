@@ -6,7 +6,7 @@ from decimal import Decimal
 from hashlib import sha256
 from hmac import new as hmac_new
 from time import time
-from typing import Self
+from typing import Any, Self
 from urllib.parse import urljoin
 from uuid import uuid4
 
@@ -65,7 +65,10 @@ class Encrypt:
             for b64data in self.base64encode(hmac)
         )
 
-    def dumps_dict_to_bytes(self: Self, data: dict) -> Result[bytes, Exception]:
+    def dumps_dict_to_bytes(
+        self: Self,
+        data: dict[str, Any],
+    ) -> Result[bytes, Exception]:
         """Dumps dict to bytes[json].
 
         {"qaz":"edc"} -> b'{"qaz":"wsx"}'
@@ -75,7 +78,10 @@ class Encrypt:
         except JSONEncodeError as exc:
             return Err(exc)
 
-    def parse_bytes_to_dict(self: Self, data: bytes) -> Result[dict, Exception]:
+    def parse_bytes_to_dict(
+        self: Self,
+        data: bytes,
+    ) -> Result[dict[str, Any], Exception]:
         """Parse bytes[json] to dict.
 
         b'{"qaz":"wsx"}' -> {"qaz":"wsx"}
@@ -113,8 +119,8 @@ class Request(Encrypt):
 
     async def post_api_v1_margin_order(
         self: Self,
-        data: dict,
-    ) -> Result[dict, Exception]:
+        data: dict[str, str],
+    ) -> Result[dict[str, Any], Exception]:
         """Make margin order.
 
         https://www.kucoin.com/docs/rest/margin-trading/orders/place-margin-order
@@ -154,7 +160,10 @@ class Request(Encrypt):
             for checked_dict in self.check_response_code(response_dict)
         )
 
-    async def get_api_v1_accounts(self: Self, params: dict) -> Result[dict, Exception]:
+    async def get_api_v1_accounts(
+        self: Self,
+        params: dict[str, str],
+    ) -> Result[dict[str, Any], Exception]:
         """Get account list with balance.
 
         https://www.kucoin.com/docs/rest/account/basic-info/get-account-list-spot-margin-trade_hf
@@ -179,7 +188,9 @@ class Request(Encrypt):
             for checked_dict in self.check_response_code(response_dict)
         )
 
-    async def get_api_v2_symbols(self: Self) -> Result[dict, Exception]:
+    async def get_api_v2_symbols(
+        self: Self,
+    ) -> Result[dict[str, Any], Exception]:
         """Get symbol list.
 
         https://www.kucoin.com/docs/rest/spot-trading/market-data/get-symbols-list
@@ -201,8 +212,8 @@ class Request(Encrypt):
 
     async def get_api_v3_margin_accounts(
         self: Self,
-        params: dict,
-    ) -> Result[dict, Exception]:
+        params: dict[str, str],
+    ) -> Result[dict[str, dict[str, str]], Exception]:
         """Get margin account user data."""
         uri = "/api/v3/margin/accounts"
         method = "GET"
@@ -228,7 +239,9 @@ class Request(Encrypt):
             for checked_dict in self.check_response_code(response_dict)
         )
 
-    async def get_api_v1_bullet_private(self: Self) -> Result[dict, Exception]:
+    async def get_api_v1_bullet_private(
+        self: Self,
+    ) -> Result[dict[str, str], Exception]:
         """Get tokens for private channel.
 
         https://www.kucoin.com/docs/websocket/basic-info/apply-connect-token/private-channels-authentication-request-required-
@@ -252,7 +265,9 @@ class Request(Encrypt):
             for checked_dict in self.check_response_code(response_dict)
         )
 
-    async def get_api_v1_bullet_public(self: Self) -> Result[dict, Exception]:
+    async def get_api_v1_bullet_public(
+        self: Self,
+    ) -> Result[dict[str, dict[str, str]], Exception]:
         """Get public token.
 
         https://www.kucoin.com/docs/websocket/basic-info/apply-connect-token/public-token-no-authentication-required-
@@ -284,9 +299,9 @@ class Request(Encrypt):
 
     def export_url_from_api_v1_bullet_public(
         self: Self,
-        data: dict,
+        data: dict[str, Any],
     ) -> Result[str, Exception]:
-        """."""
+        """Get endpoint for public websocket."""
         try:
             return Ok(data["data"]["instanceServers"][0]["endpoint"])
         except (KeyError, TypeError) as exc:
@@ -294,15 +309,18 @@ class Request(Encrypt):
 
     def export_token_from_api_v1_bullet_public(
         self: Self,
-        data: dict,
+        data: dict[str, dict[str, str]],
     ) -> Result[str, Exception]:
-        """."""
+        """Get token for public websocket."""
         try:
             return Ok(data["data"]["token"])
         except (KeyError, TypeError) as exc:
             return Err(Exception(f"Miss keys token in {exc} by {data}"))
 
-    def get_url_params_as_str(self: Self, params: dict) -> Result[str, Exception]:
+    def get_url_params_as_str(
+        self: Self,
+        params: dict[str, str],
+    ) -> Result[str, Exception]:
         """Get url params in str.
 
         if params is empty -> ''
@@ -325,7 +343,7 @@ class Request(Encrypt):
         self: Self,
         data: str,
         now_time: str,
-    ) -> Result[dict, Exception]:
+    ) -> Result[dict[str, str], Exception]:
         """Get headers with encrypted data for http request."""
         return do(
             Ok(
@@ -346,7 +364,7 @@ class Request(Encrypt):
             for kc_api_passphrase in self.encrypt_data(secret, passphrase)
         )
 
-    def get_headers_not_auth(self: Self) -> Result[dict, Exception]:
+    def get_headers_not_auth(self: Self) -> Result[dict[str, str], Exception]:
         """Get headers without encripted data for http request."""
         return Ok({"User-Agent": "kucoin-python-sdk/2"})
 
@@ -354,7 +372,10 @@ class Request(Encrypt):
         """Get now time for encrypted data."""
         return Ok(f"{int(time()) * 1000}")
 
-    def check_response_code(self: Self, data: dict) -> Result[dict, Exception]:
+    def check_response_code(
+        self: Self,
+        data: dict[str, Any],
+    ) -> Result[dict[str, Any], Exception]:
         """Check if key `code`.
 
         If key `code` in dict == '200000' then success
@@ -367,7 +388,7 @@ class Request(Encrypt):
         self: Self,
         url: str,
         method: str,
-        headers: dict,
+        headers: dict[str, str],
         data: bytes | None = None,
     ) -> Result[bytes, Exception]:
         """Base http request."""
@@ -402,7 +423,7 @@ class WebSocket(Encrypt):
 
     def check_welcome_msg_from_websocket(
         self: Self,
-        data: dict,
+        data: dict[str, dict[str, str]],
     ) -> Result[str, Exception]:
         """."""
         match data:
@@ -411,7 +432,7 @@ class WebSocket(Encrypt):
             case _:
                 return Err(Exception(f"Error parse welcome from websocket:{data}"))
 
-    def get_tunnel_websocket(self: Self) -> Result[dict, Exception]:
+    def get_tunnel_websocket(self: Self) -> Result[dict[str, str], Exception]:
         """."""
         return Ok(
             {
@@ -421,7 +442,7 @@ class WebSocket(Encrypt):
             },
         )
 
-    def get_klines(self: Self) -> Result[dict, Exception]:
+    def get_klines(self: Self) -> Result[dict[str, str | bool], Exception]:
         """."""
         return Ok(
             {
@@ -436,7 +457,7 @@ class WebSocket(Encrypt):
     async def send_data_to_ws(
         self: Self,
         ws: ClientConnection,
-        data: dict,
+        data: dict[str, Any],
     ) -> Result[None, Exception]:
         """."""
         return await do_async(
@@ -522,20 +543,22 @@ class KCN(Request, WebSocket):
 
         "TICKET":{}
         """
-        self.book: dict[str, dict] = {ticket: {} for ticket in self.ALL_CURRENCY}
+        self.book: dict[str, dict[str, str]] = {
+            ticket: {} for ticket in self.ALL_CURRENCY
+        }
         return Ok(None)
 
     def export_baseincrement_from_symbols(
         self: Self,
-        data: dict,
-    ) -> Result[dict, Exception]:
+        data: dict[str, Any],
+    ) -> Result[dict[str, str], Exception]:
         """Export from get_api_v2_symbols baseIncrement by baseCurrency."""
         return Ok({d["baseCurrency"]: d["baseIncrement"] for d in data["data"]})
 
     def export_account_usdt_from_api_v3_margin_accounts(
         self: Self,
-        data: dict,
-    ) -> Result[dict, Exception]:
+        data: dict[str, Any],
+    ) -> Result[dict[str, Any], Exception]:
         """."""
         try:
             for i in [i for i in data["data"]["accounts"] if i["currency"] == "USDT"]:
@@ -546,14 +569,14 @@ class KCN(Request, WebSocket):
 
     def export_liability_usdt(
         self: Self,
-        data: dict,
+        data: dict[str, str],
     ) -> Result[Decimal, Exception]:
         """Export liability and available USDT from api_v3_margin_accounts."""
         return Ok(Decimal(data["liability"]))
 
     def export_available_usdt(
         self: Self,
-        data: dict,
+        data: dict[str, str],
     ) -> Result[Decimal, Exception]:
         """Export liability and available USDT from api_v3_margin_accounts."""
         return Ok(Decimal(data["available"]))
@@ -561,7 +584,7 @@ class KCN(Request, WebSocket):
     async def alertest(self: Self) -> Result[None, Exception]:
         """Alert statistic."""
         logger.info("alertest")
-        t = await do_async(
+        await do_async(
             Ok(f"{liability=}:{available=}")
             for api_v3_margin_accounts in await self.get_api_v3_margin_accounts(
                 params={
@@ -574,7 +597,6 @@ class KCN(Request, WebSocket):
             for liability in self.export_liability_usdt(accounts_data)
             for available in self.export_available_usdt(accounts_data)
         )
-        logger.info(t)
         await asyncio.sleep(1000)
         return Ok(None)
 
