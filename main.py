@@ -846,6 +846,12 @@ class KCN(Request, WebSocket):
         logger.info("matching")
         return Ok(None)
 
+    def fill_balance(self:Self, data:dict) -> Result[None,Exception]:
+        """."""
+        for ticket in data['data']:
+            if ticket in self.book:
+                self.book[ticket]['balance'] = Decimal(ticket['balance'])
+
     async def pre_init(self: Self) -> Result[None, Exception]:
         """Pre-init.
 
@@ -857,23 +863,22 @@ class KCN(Request, WebSocket):
         return await do_async(
             Ok(self)
             for _ in self.create_book()
-            for _ in self.logger_info(f"{self.book=}")
             for orders_for_cancel in await self.get_api_v1_orders(
                 params={
                     "status": "active",
                     "tradeType": "MARGIN_TRADE",
                 },
             )
-            for _ in self.logger_info(f"{orders_for_cancel=}")
             for orders_list_str in self.export_order_id_from_orders_list(
                 orders_for_cancel,
             )
-            for _ in self.logger_info(f"{orders_for_cancel=}")
             for _ in await self.massive_cancel_order(orders_list_str)
             for balance_accounts in await self.get_api_v1_accounts(
                 params={"type": "margin"},
             )
             for _ in self.logger_info(f"{balance_accounts}")
+            for _ in self.fill_balance(balance_accounts)
+            for _ in self.logger_info(f"{self.book=}")
         )
 
 
