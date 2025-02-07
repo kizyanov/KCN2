@@ -850,7 +850,7 @@ class KCN(Request, WebSocket):
     def fill_base_increment(self:Self, data:dict) -> Result[None,Exception]:
         """."""
         for out_side_ticket in data['data']:
-            if out_side_ticket['baseCurrency'] in self.book:
+            if out_side_ticket['baseCurrency'] in self.book and out_side_ticket['quoteCurrency'] =='USDT':
                 self.book[out_side_ticket['baseCurrency']]['increment'] = Decimal(out_side_ticket['baseIncrement'])
 
         return Ok(None)
