@@ -850,7 +850,7 @@ class KCN(Request, WebSocket):
         """."""
         for ticket in data['data']:
             if ticket['currency'] in self.book:
-                self.book[ticket]['balance'] = Decimal(ticket['balance'])
+                self.book[ticket['currency']]['balance'] = Decimal(ticket['balance'])
 
     async def pre_init(self: Self) -> Result[None, Exception]:
         """Pre-init.
