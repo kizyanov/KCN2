@@ -804,7 +804,7 @@ class KCN(Request, WebSocket):
     ) -> Result[list[str], Exception]:
         """Export id from orders list."""
         logger.info(f"{orders=}")
-        return Ok([order["id"] for order in orders["items"]])
+        return Ok([order["id"] for order in orders['data']["items"]])
 
     async def balancer(self: Self) -> Result[None, Exception]:
         """Monitoring of balance.
