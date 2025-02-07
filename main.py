@@ -855,7 +855,7 @@ class KCN(Request, WebSocket):
         get increment by all tickets
         """
         return await do_async(
-            Ok(None)
+            Ok(self)
             for _ in self.create_book()
             for _ in self.logger_info(f"{self.book=}")
             for orders_for_cancel in await self.get_api_v1_orders(
@@ -879,9 +879,8 @@ class KCN(Request, WebSocket):
 
 async def main() -> Result[None, Exception]:
     """Collect of major func."""
-    kcn = KCN()
-    match await kcn.pre_init():
-        case Ok(None):
+    match await KCN().pre_init():
+        case Ok(kcn):
             kcn.logger_success("Pre-init OK!")
             # async with asyncio.TaskGroup() as tg:
             #     await tg.create_task(kcn.alertest())
