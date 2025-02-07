@@ -20,7 +20,16 @@ from websockets import ClientConnection, connect
 from websockets import exceptions as websockets_exceptions
 
 
-class Encrypt:
+class Base:
+    """Base class for all classes."""
+
+    def logger_info[T](self: Self, data: T) -> Result[T, Exception]:
+        """Info logger for Pipes."""
+        logger.info(data)
+        return Ok(data)
+
+
+class Encrypt(Base):
     """All methods for encrypt data."""
 
     def cancatinate_str(self: Self, *args: str) -> Result[str, Exception]:
@@ -271,7 +280,7 @@ class Request(Encrypt):
         self: Self,
         params: dict[str, str],
     ) -> Result[dict[str, Any], Exception]:
-        """Get orders."""
+        """Get all orders by params."""
         uri = "/api/v1/orders"
         method = "GET"
         return await do_async(
@@ -803,6 +812,7 @@ class KCN(Request, WebSocket):
                     "tradeType": "MARGIN_TRADE",
                 },
             )
+            for _ in self.logger_info(orders_for_cancel)
             for orders_list_str in self.export_order_id_from_orders_list(
                 orders_for_cancel,
             )
