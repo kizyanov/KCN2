@@ -811,7 +811,6 @@ class KCN(Request, WebSocket):
             for liability in self.export_liability_usdt(accounts_data)
             for available in self.export_available_usdt(accounts_data)
         )
-        await asyncio.sleep(1000)
         return Ok(None)
 
     async def massive_cancel_order(
