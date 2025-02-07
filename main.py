@@ -23,13 +23,23 @@ from websockets import exceptions as websockets_exceptions
 class Encrypt:
     """All methods for encrypt data."""
 
+    def cancatinate_str(self: Self, *args: str) -> Result[str, Exception]:
+        """Cancatinate to str."""
+        try:
+            return Ok("".join(*args))
+        except TypeError as exc:
+            logger.exception(exc)
+            return Err(exc)
+
     def get_default_uuid4(self: Self) -> Result[UUID, Exception]:
         """Get default uuid4."""
         return Ok(uuid4())
 
     def format_to_str_uuid(self: Self, data: UUID) -> Result[str, Exception]:
         """Get str UUID4 and replace `-` symbol to spaces."""
-        return Ok(f"{str(data).replace('-','')}")
+        return do(
+            Ok(result) for result in self.cancatinate_str(str(data).replace("-", ""))
+        )
 
     def get_uuid4(self: Self) -> Result[str, Exception]:
         """Get uuid4 as str without `-` symbols.
@@ -49,6 +59,7 @@ class Encrypt:
         try:
             return Ok(b64encode(data))
         except TypeError as exc:
+            logger.exception(exc)
             return Err(exc)
 
     def convert_base64_to_bytes(self: Self, data: bytes) -> Result[bytes, Exception]:
@@ -56,6 +67,7 @@ class Encrypt:
         try:
             return Ok(b64decode(data))
         except TypeError as exc:
+            logger.exception(exc)
             return Err(exc)
 
     def encode(self: Self, data: str) -> Result[bytes, Exception]:
@@ -63,6 +75,7 @@ class Encrypt:
         try:
             return Ok(data.encode())
         except AttributeError as exc:
+            logger.exception(exc)
             return Err(exc)
 
     def decode(self: Self, data: bytes) -> Result[str, Exception]:
@@ -70,6 +83,7 @@ class Encrypt:
         try:
             return Ok(data.decode())
         except AttributeError as exc:
+            logger.exception(exc)
             return Err(exc)
 
     def get_default_hmac(
@@ -108,6 +122,7 @@ class Encrypt:
         try:
             return Ok(dumps(data))
         except JSONEncodeError as exc:
+            logger.exception(exc)
             return Err(exc)
 
     def parse_bytes_to_dict(
@@ -121,6 +136,7 @@ class Encrypt:
         try:
             return Ok(loads(data))
         except JSONDecodeError as exc:
+            logger.exception(exc)
             return Err(exc)
 
 
@@ -132,6 +148,7 @@ class Request(Encrypt):
         try:
             return Ok(environ[key])
         except ValueError as exc:
+            logger.exception(exc)
             return Err(exc)
 
     def _env_convert_to_list(self: Self, data: str) -> Result[list[str], Exception]:
@@ -200,8 +217,14 @@ class Request(Encrypt):
             for dumps_data_bytes in self.dumps_dict_to_bytes(data)
             for dumps_data_str in self.decode(dumps_data_bytes)
             for now_time in self.get_now_time()
+            for data_to_sign in self.cancatinate_str(
+                now_time,
+                method,
+                uri,
+                dumps_data_str,
+            )
             for headers in self.get_headers_auth(
-                f"{now_time}{method}{uri}{dumps_data_str}",
+                data_to_sign,
                 now_time,
             )
             for response_bytes in await self.request(
@@ -227,10 +250,12 @@ class Request(Encrypt):
         return await do_async(
             Ok(checked_dict)
             for params_in_url in self.get_url_params_as_str(params)
-            for full_url in self.get_full_url(self.BASE_URL, f"{uri}{params_in_url}")
+            for uri_params in self.cancatinate_str(uri, params_in_url)
+            for full_url in self.get_full_url(self.BASE_URL, uri_params)
             for now_time in self.get_now_time()
+            for data_to_sign in self.cancatinate_str(now_time, method, uri_params)
             for headers in self.get_headers_auth(
-                f"{now_time}{method}{uri}{params_in_url}",
+                data_to_sign,
                 now_time,
             )
             for response_bytes in await self.request(
@@ -252,10 +277,12 @@ class Request(Encrypt):
         return await do_async(
             Ok(checked_dict)
             for params_in_url in self.get_url_params_as_str(params)
-            for full_url in self.get_full_url(self.BASE_URL, f"{uri}{params_in_url}")
+            for uri_params in self.cancatinate_str(uri, params_in_url)
+            for full_url in self.get_full_url(self.BASE_URL, uri_params)
             for now_time in self.get_now_time()
+            for data_to_sign in self.cancatinate_str(now_time, method, uri_params)
             for headers in self.get_headers_auth(
-                f"{now_time}{method}{uri}{params_in_url}",
+                data_to_sign,
                 now_time,
             )
             for response_bytes in await self.request(
@@ -278,8 +305,9 @@ class Request(Encrypt):
             Ok(checked_dict)
             for full_url in self.get_full_url(self.BASE_URL, uri)
             for now_time in self.get_now_time()
+            for data_to_sign in self.cancatinate_str(now_time, method, uri)
             for headers in self.get_headers_auth(
-                f"{now_time}{method}{uri}",
+                data_to_sign,
                 now_time,
             )
             for response_bytes in await self.request(
@@ -472,6 +500,7 @@ class Request(Encrypt):
         try:
             return Ok(int(data))
         except ValueError as exc:
+            logger.exception(exc)
             return Err(exc)
 
     def get_time(self: Self) -> Result[float, Exception]:
@@ -520,6 +549,7 @@ class Request(Encrypt):
                 res = await response.read()  # bytes
                 return Ok(res)
         except ClientConnectorError as exc:
+            logger.exception(exc)
             return Err(exc)
 
 
@@ -618,6 +648,7 @@ class WebSocket(Encrypt):
                     for asd in await self.recv_data_from_websocket(s)
                 )
             except websockets_exceptions.ConnectionClosed as exc:
+                logger.exception(exc)
                 return Err(exc)
         return Ok("")
 
@@ -636,6 +667,7 @@ class WebSocket(Encrypt):
             websockets_exceptions.ConnectionClosed,
             websockets_exceptions.ConcurrencyError,
         ) as exc:
+            logger.exception(exc)
             return Err(exc)
 
     async def send_data_to_websocket(
@@ -652,6 +684,7 @@ class WebSocket(Encrypt):
             websockets_exceptions.ConcurrencyError,
             TypeError,
         ) as exc:
+            logger.exception(exc)
             return Err(exc)
 
 
@@ -696,6 +729,7 @@ class KCN(Request, WebSocket):
                 return Ok(i)
             return Err(Exception("Not found USDT in accounts data"))
         except (AttributeError, KeyError) as exc:
+            logger.exception(exc)
             return Err(exc)
 
     def export_liability_usdt(
