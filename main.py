@@ -728,10 +728,35 @@ class KCN(Request, WebSocket):
 
         build inside book for tickets
 
-        "TICKET":{}
+        {
+            "ADA": {
+                "balance": "",
+                "increment": "",
+                "sellorder": "",
+                "buyorder": ""
+            },
+            "JUP": {
+                "balance": "",
+                "increment": "",
+                "sellorder": "",
+                "buyorder": ""
+            },
+            "SOL": {
+                "balance": "",
+                "increment": "",
+                "sellorder": "",
+                "buyorder": ""
+            },
+            "BTC": {
+                "balance": "",
+                "increment": "",
+                "sellorder": "",
+                "buyorder": ""
+            }
+        }
         """
         self.book: dict[str, dict[str, str]] = {
-            ticket: {} for ticket in self.ALL_CURRENCY
+            ticket: {} for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
         }
         return Ok(None)
 
@@ -804,7 +829,7 @@ class KCN(Request, WebSocket):
     ) -> Result[list[str], Exception]:
         """Export id from orders list."""
         logger.info(f"{orders=}")
-        return Ok([order["id"] for order in orders['data']["items"]])
+        return Ok([order["id"] for order in orders["data"]["items"]])
 
     async def balancer(self: Self) -> Result[None, Exception]:
         """Monitoring of balance.
@@ -830,6 +855,7 @@ class KCN(Request, WebSocket):
         get balance by  all tickets
         get increment by all tickets
         """
+        self.logger_info(self.book)
         return await do_async(
             Ok(None)
             for orders_for_cancel in await self.get_api_v1_orders(
@@ -844,7 +870,9 @@ class KCN(Request, WebSocket):
             )
             for _ in self.logger_info(f"{orders_for_cancel=}")
             for _ in await self.massive_cancel_order(orders_list_str)
-            for balance_accounts in await self.get_api_v1_accounts(params={"type": "margin"})
+            for balance_accounts in await self.get_api_v1_accounts(
+                params={"type": "margin"},
+            )
             for _ in self.logger_info(f"{balance_accounts}")
         )
 
@@ -852,13 +880,14 @@ class KCN(Request, WebSocket):
 async def main() -> Result[None, Exception]:
     """Collect of major func."""
     kcn = KCN()
+    kcn.create_book()
     match await kcn.pre_init():
         case Ok(None):
             kcn.logger_success("Pre-init OK!")
-            async with asyncio.TaskGroup() as tg:
-                await tg.create_task(kcn.alertest())
-                await tg.create_task(kcn.balancer())
-                await tg.create_task(kcn.matching())
+            # async with asyncio.TaskGroup() as tg:
+            #     await tg.create_task(kcn.alertest())
+            #     await tg.create_task(kcn.balancer())
+            #     await tg.create_task(kcn.matching())
         case Err(exc):
             kcn.logger_exception(exc)
             return Err(exc)
