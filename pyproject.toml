@@ -10,13 +10,12 @@ dependencies = [
     "orjson (==3.10.15)",
     "aiohttp[speedups] (==3.11.11)",
     "loguru (==0.7.3)",
-    "python-decouple (==3.8)",
     "websockets (==14.2)",
 ]
 
 [tool.ruff]
 lint.select = ["ALL"]
-lint.ignore = []
+lint.ignore = ["N815"]
 lint.fixable = ["I", "COM"]
 lint.mccabe.max-complexity = 3
 lint.pydocstyle.convention = "google"
@@ -26,10 +25,13 @@ target-version = "py313"
 [tool.poetry]
 package-mode = false
 
+
 [tool.poetry.group.dev.dependencies]
 black = "^25.1.0"
 ruff = "^0.9.4"
-mypy = "^1.14.1"
+mypy = "^1.15.0"
+pytest-cov = "^6.0.0"
+vulture = "^2.14"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
