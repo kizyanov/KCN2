@@ -769,6 +769,7 @@ class KCN(Request, WebSocket):
                     "quoteCurrency": "USDT",
                 },
             )
+            for _ in self.logger_info(api_v3_margin_accounts)
             for accounts_data in self.export_account_usdt_from_api_v3_margin_accounts(
                 api_v3_margin_accounts,
             )
