@@ -351,10 +351,12 @@ class Request(Encrypt):
         return await do_async(
             Ok(checked_dict)
             for params_in_url in self.get_url_params_as_str(params)
-            for full_url in self.get_full_url(self.BASE_URL, f"{uri}{params_in_url}")
+            for uri_params in self.cancatinate_str(uri, params_in_url)
+            for full_url in self.get_full_url(self.BASE_URL, uri_params)
             for now_time in self.get_now_time()
+            for data_to_sign in self.cancatinate_str(now_time, method, uri_params)
             for headers in self.get_headers_auth(
-                f"{now_time}{method}{uri}{params_in_url}",
+                data_to_sign,
                 now_time,
             )
             for response_bytes in await self.request(
@@ -379,8 +381,9 @@ class Request(Encrypt):
             Ok(checked_dict)
             for full_url in self.get_full_url(self.BASE_URL, uri)
             for now_time in self.get_now_time()
+            for data_to_sign in self.cancatinate_str(now_time, method, uri)
             for headers in self.get_headers_auth(
-                f"{now_time}{method}{uri}",
+                data_to_sign,
                 now_time,
             )
             for response_bytes in await self.request(
