@@ -854,9 +854,10 @@ class KCN(Request, WebSocket):
         get balance by  all tickets
         get increment by all tickets
         """
-        self.logger_info(self.book)
         return await do_async(
             Ok(None)
+            for _ in self.create_book()
+            for _ in self.logger_info(f"{self.book=}")
             for orders_for_cancel in await self.get_api_v1_orders(
                 params={
                     "status": "active",
@@ -879,7 +880,6 @@ class KCN(Request, WebSocket):
 async def main() -> Result[None, Exception]:
     """Collect of major func."""
     kcn = KCN()
-    kcn.create_book()
     match await kcn.pre_init():
         case Ok(None):
             kcn.logger_success("Pre-init OK!")
