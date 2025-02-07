@@ -847,8 +847,13 @@ class KCN(Request, WebSocket):
                 self.book[ticket['currency']]['balance'] = Decimal(ticket['balance'])
         return Ok(None)
 
+    def fill_base_increment(self:Self, data:dict) -> Result[None,Exception]:
+        """."""
+        for out_side_ticket in data['data']:
+            if out_side_ticket['baseCurrency'] in self.book:
+                self.book[out_side_ticket['baseCurrency']]['increment'] = Decimal(out_side_ticket['baseIncrement'])
 
-
+        return Ok(None)
 
     async def pre_init(self: Self) -> Result[None, Exception]:
         """Pre-init.
@@ -877,7 +882,8 @@ class KCN(Request, WebSocket):
             for _ in self.fill_balance(balance_accounts)
             for ticket_info in await self.get_api_v2_symbols()
             for _ in self.logger_info(ticket_info)
-            
+            for _ in self.fill_base_increment(ticket_info)
+            for _ in self.logger_info(self.book)            
         )
 
 
