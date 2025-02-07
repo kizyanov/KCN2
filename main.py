@@ -1,17 +1,18 @@
 """KCN2 trading bot for kucoin."""
 
 import asyncio
-from base64 import b64encode
+from base64 import b64decode, b64encode
 from decimal import Decimal
 from hashlib import sha256
+from hmac import HMAC
 from hmac import new as hmac_new
+from os import environ
 from time import time
 from typing import Any, Self
 from urllib.parse import urljoin
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from aiohttp import ClientConnectorError, ClientSession
-from decouple import Csv, config
 from loguru import logger
 from orjson import JSONDecodeError, JSONEncodeError, dumps, loads
 from result import Err, Ok, Result, do, do_async
@@ -22,17 +23,38 @@ from websockets import exceptions as websockets_exceptions
 class Encrypt:
     """All methods for encrypt data."""
 
+    def get_default_uuid4(self: Self) -> Result[UUID, Exception]:
+        """Get default uuid4."""
+        return Ok(uuid4())
+
+    def format_to_str_uuid(self: Self, data: UUID) -> Result[str, Exception]:
+        """Get str UUID4 and replace `-` symbol to spaces."""
+        return Ok(f"{str(data).replace('-','')}")
+
     def get_uuid4(self: Self) -> Result[str, Exception]:
-        """Get uuid4 in str without - symbols.
+        """Get uuid4 as str without `-` symbols.
 
         8e7c653b-7faf-47fe-b6d3-e87c277e138a -> 8e7c653b7faf47feb6d3e87c277e138a
-        """
-        return Ok(f"{str(uuid4()).replace('-', '')}")
 
-    def base64encode(self: Self, data: bytes) -> Result[str, Exception]:
-        """Convert `data` to base64."""
+        get_default_uuid4 -> format_to_str_uuid
+        """
+        return do(
+            Ok(str_uuid)
+            for default_uuid in self.get_default_uuid4()
+            for str_uuid in self.format_to_str_uuid(default_uuid)
+        )
+
+    def convert_bytes_to_base64(self: Self, data: bytes) -> Result[bytes, Exception]:
+        """Convert bytes to base64."""
         try:
-            return Ok(b64encode(data).decode())
+            return Ok(b64encode(data))
+        except TypeError as exc:
+            return Err(exc)
+
+    def convert_base64_to_bytes(self: Self, data: bytes) -> Result[bytes, Exception]:
+        """Convert base64 to bytes."""
+        try:
+            return Ok(b64decode(data))
         except TypeError as exc:
             return Err(exc)
 
@@ -50,19 +72,29 @@ class Encrypt:
         except AttributeError as exc:
             return Err(exc)
 
-    def hmac(self: Self, secret: bytes, data: bytes) -> Result[bytes, Exception]:
-        """Convert `data` to hmac."""
-        try:
-            return Ok(hmac_new(secret, data, sha256).digest())
-        except TypeError as exc:
-            return Err(exc)
+    def get_default_hmac(
+        self: Self,
+        secret: bytes,
+        data: bytes,
+    ) -> Result[HMAC, Exception]:
+        """Get default HMAC."""
+        return Ok(hmac_new(secret, data, sha256))
+
+    def convert_hmac_to_digest(
+        self: Self,
+        hmac_object: HMAC,
+    ) -> Result[bytes, Exception]:
+        """Convert HMAC to digest."""
+        return Ok(hmac_object.digest())
 
     def encrypt_data(self: Self, secret: bytes, data: bytes) -> Result[str, Exception]:
         """Encript `data` to hmac."""
         return do(
-            Ok(b64data)
-            for hmac in self.hmac(secret, data)
-            for b64data in self.base64encode(hmac)
+            Ok(result)
+            for hmac_object in self.get_default_hmac(secret, data)
+            for hmac_data in self.convert_hmac_to_digest(hmac_object)
+            for base64_data in self.convert_bytes_to_base64(hmac_data)
+            for result in self.decode(base64_data)
         )
 
     def dumps_dict_to_bytes(
@@ -95,25 +127,47 @@ class Encrypt:
 class Request(Encrypt):
     """All methods for http actions."""
 
+    def get_env(self: Self, key: str) -> Result[str, ValueError]:
+        """Just get key from EVN."""
+        try:
+            return Ok(environ[key])
+        except ValueError as exc:
+            return Err(exc)
+
+    def _env_convert_to_list(self: Self, data: str) -> Result[list[str], Exception]:
+        """Split str by ',' character."""
+        return Ok(data.split(","))
+
+    def get_list_env(self: Self, key: str) -> Result[list[str], Exception]:
+        """Get value from ENV in list[str] format.
+
+        in .env
+        KEYS=1,2,3,4,5,6
+
+        to
+        KEYS = ['1','2','3','4','5','6']
+        """
+        return do(
+            Ok(value_in_list)
+            for value_by_key in self.get_env(key)
+            for value_in_list in self._env_convert_to_list(value_by_key)
+        )
+
     def __init__(self: Self) -> None:
         """Init settings."""
         # All about excange
-        self.KEY = config("KEY", cast=str)
-        self.SECRET = config("SECRET", cast=str)
-        self.PASSPHRASE = config("PASSPHRASE", cast=str)
-        self.BASE_URL = config(
-            "BASE_URL",
-            cast=str,
-            default="https://api.kucoin.com",
-        )
+        self.KEY = self.get_env("KEY").unwrap()
+        self.SECRET = self.get_env("SECRET").unwrap()
+        self.PASSPHRASE = self.get_env("PASSPHRASE").unwrap()
+        self.BASE_URL = self.get_env("BASE_URL").unwrap()
 
         # all about tokens
-        self.ALL_CURRENCY = config("ALLCURRENCY", cast=Csv(str))
-        self.BASE_KEEP = Decimal(config("BASE_KEEP", cast=int))
+        self.ALL_CURRENCY = self.get_list_env("ALLCURRENCY").unwrap()
+        self.BASE_KEEP = Decimal(self.get_env("BASE_KEEP").unwrap())
 
         # All about tlg
-        self.TELEGRAM_BOT_API_KEY = config("TELEGRAM_BOT_API_KEY", cast=str)
-        self.TELEGRAM_BOT_CHAT_ID = config("TELEGRAM_BOT_CHAT_ID", cast=Csv(str))
+        self.TELEGRAM_BOT_API_KEY = self.get_env("TELEGRAM_BOT_API_KEY").unwrap()
+        self.TELEGRAM_BOT_CHAT_ID = self.get_list_env("TELEGRAM_BOT_CHAT_ID").unwrap()
 
         logger.success("Settings are OK!")
 
@@ -368,9 +422,24 @@ class Request(Encrypt):
         """Get headers without encripted data for http request."""
         return Ok({"User-Agent": "kucoin-python-sdk/2"})
 
+    def convert_to_int(self: Self, data: float) -> Result[int, Exception]:
+        """Convert data to int."""
+        try:
+            return Ok(int(data))
+        except ValueError as exc:
+            return Err(exc)
+
+    def get_time(self: Self) -> Result[float, Exception]:
+        """Get now time as float."""
+        return Ok(time())
+
     def get_now_time(self: Self) -> Result[str, Exception]:
         """Get now time for encrypted data."""
-        return Ok(f"{int(time()) * 1000}")
+        return do(
+            Ok(f"{time_now_in_int*1000}")
+            for time_now in self.get_time()
+            for time_now_in_int in self.convert_to_int(time_now)
+        )
 
     def check_response_code(
         self: Self,
@@ -423,14 +492,18 @@ class WebSocket(Encrypt):
 
     def check_welcome_msg_from_websocket(
         self: Self,
-        data: dict[str, dict[str, str]],
-    ) -> Result[str, Exception]:
-        """."""
-        match data:
-            case {"id": _, "type": "welcome"}:
-                return Ok("welcome")
-            case _:
-                return Err(Exception(f"Error parse welcome from websocket:{data}"))
+        data: dict[str, str],
+    ) -> Result[None, Exception]:
+        """Check msg `welcome` from websocket connection.
+
+        {
+            "id": "hQvf8jkno",
+            "type": "welcome"
+        }
+        """
+        if "id" in data and "type" in data and data["type"] == "welcome":
+            return Ok(None)
+        return Err(Exception(f"Error parse welcome from websocket:{data}"))
 
     def get_tunnel_websocket(self: Self) -> Result[dict[str, str], Exception]:
         """."""
@@ -470,7 +543,15 @@ class WebSocket(Encrypt):
         self: Self,
         dd: ClientConnection,
     ) -> Result[bytes, Exception]:
-        """."""
+        """When the connection on websocket is successfully established.
+
+        the system will send a welcome message.
+
+        {
+            "id": "hQvf8jkno",
+            "type": "welcome"
+        }
+        """
         return await do_async(
             Ok(_)
             for welcome_data_websocket in await self.recv_data_from_websocket(dd)

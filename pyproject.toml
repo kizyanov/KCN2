@@ -10,7 +10,6 @@ dependencies = [
     "orjson (==3.10.15)",
     "aiohttp[speedups] (==3.11.11)",
     "loguru (==0.7.3)",
-    "python-decouple (==3.8)",
     "websockets (==14.2)",
 ]
 
@@ -31,6 +30,8 @@ package-mode = false
 black = "^25.1.0"
 ruff = "^0.9.4"
 mypy = "^1.15.0"
+pytest-cov = "^6.0.0"
+vulture = "^2.14"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
