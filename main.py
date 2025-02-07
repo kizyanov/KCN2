@@ -559,7 +559,7 @@ class Request(Encrypt):
                 ) as response,
             ):
                 res = await response.read()  # bytes
-                logger.info(f"{response.status}:{method}:{url}:{headers}:{data}")
+                logger.info(f"{response.status}:{method}:{url}")
                 return Ok(res)
         except ClientConnectorError as exc:
             logger.exception(exc)
@@ -713,6 +713,16 @@ class KCN(Request, WebSocket):
         logger.info(data)
         return Ok(data)
 
+    def logger_exception[T](self: Self, data: T) -> Result[T, Exception]:
+        """Логгер уровня exception для do и do_async функций."""
+        logger.exception(data)
+        return Ok(data)
+
+    def logger_success[T](self: Self, data: T) -> Result[T, Exception]:
+        """Логгер уровня success для do и do_async функций."""
+        logger.success(data)
+        return Ok(data)
+
     def create_book(self: Self) -> Result[None, Exception]:
         """Build own structure.
 
@@ -805,20 +815,6 @@ class KCN(Request, WebSocket):
         Start listen websocket
         """
         logger.info("balancer")
-        await do_async(
-            Ok(None)
-            for orders_for_cancel in await self.get_api_v1_orders(
-                params={
-                    "status": "active",
-                    "tradeType": "MARGIN_TRADE",
-                },
-            )
-            for _ in self.logger_info(orders_for_cancel)
-            for orders_list_str in self.export_order_id_from_orders_list(
-                orders_for_cancel,
-            )
-            for _ in await self.massive_cancel_order(orders_list_str)
-        )
         return Ok(None)
 
     async def matching(self: Self) -> Result[None, Exception]:
@@ -826,15 +822,44 @@ class KCN(Request, WebSocket):
         logger.info("matching")
         return Ok(None)
 
+    async def pre_init(self: Self) -> Result[None, Exception]:
+        """Pre-init.
+
+        get all open orders
+        close all open orders
+        get balance by  all tickets
+        get increment by all tickets
+        """
+        return await do_async(
+            Ok(None)
+            for orders_for_cancel in await self.get_api_v1_orders(
+                params={
+                    "status": "active",
+                    "tradeType": "MARGIN_TRADE",
+                },
+            )
+            for _ in self.logger_info(f"{orders_for_cancel=}")
+            for orders_list_str in self.export_order_id_from_orders_list(
+                orders_for_cancel,
+            )
+            for _ in self.logger_info(f"{orders_for_cancel=}")
+            for _ in await self.massive_cancel_order(orders_list_str)
+        )
+
 
 async def main() -> Result[None, Exception]:
     """Collect of major func."""
     kcn = KCN()
-    kcn.create_book()
-    async with asyncio.TaskGroup() as tg:
-        await tg.create_task(kcn.alertest())
-        await tg.create_task(kcn.balancer())
-        await tg.create_task(kcn.matching())
+    match await kcn.pre_init():
+        case Ok(None):
+            kcn.logger_info("Pre-init OK!")
+            async with asyncio.TaskGroup() as tg:
+                await tg.create_task(kcn.alertest())
+                await tg.create_task(kcn.balancer())
+                await tg.create_task(kcn.matching())
+        case Err(exc):
+            kcn.logger_exception(exc)
+            return Err(exc)
 
     return Ok(None)
 
