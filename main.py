@@ -760,12 +760,6 @@ class KCN(Request, WebSocket):
         }
         return Ok(None)
 
-    def export_baseincrement_from_symbols(
-        self: Self,
-        data: dict[str, Any],
-    ) -> Result[dict[str, str], Exception]:
-        """Export from get_api_v2_symbols baseIncrement by baseCurrency."""
-        return Ok({d["baseCurrency"]: d["baseIncrement"] for d in data["data"]})
 
     def export_account_usdt_from_api_v3_margin_accounts(
         self: Self,
@@ -853,6 +847,9 @@ class KCN(Request, WebSocket):
                 self.book[ticket['currency']]['balance'] = Decimal(ticket['balance'])
         return Ok(None)
 
+
+
+
     async def pre_init(self: Self) -> Result[None, Exception]:
         """Pre-init.
 
@@ -877,9 +874,10 @@ class KCN(Request, WebSocket):
             for balance_accounts in await self.get_api_v1_accounts(
                 params={"type": "margin"},
             )
-            for _ in self.logger_info(f"{balance_accounts}")
             for _ in self.fill_balance(balance_accounts)
-            for _ in self.logger_info(f"{self.book=}")
+            for ticket_info in await self.get_api_v2_symbols()
+            for _ in self.logger_info(ticket_info)
+            
         )
 
 
