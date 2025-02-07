@@ -26,7 +26,7 @@ class Encrypt:
     def cancatinate_str(self: Self, *args: str) -> Result[str, Exception]:
         """Cancatinate to str."""
         try:
-            return Ok("".join(*args))
+            return Ok("".join(args))
         except TypeError as exc:
             logger.exception(exc)
             return Err(exc)
@@ -550,6 +550,7 @@ class Request(Encrypt):
                 ) as response,
             ):
                 res = await response.read()  # bytes
+                logger.info(f"{response.status}:{method}:{url}:{headers}:{data}")
                 return Ok(res)
         except ClientConnectorError as exc:
             logger.exception(exc)
