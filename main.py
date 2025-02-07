@@ -242,6 +242,55 @@ class Request(Encrypt):
             for checked_dict in self.check_response_code(response_dict)
         )
 
+    async def get_api_v1_orders(
+        self: Self,
+        params: dict[str, str],
+    ) -> Result[dict[str, Any], Exception]:
+        """Get orders."""
+        uri = "/api/v1/orders"
+        method = "GET"
+        return await do_async(
+            Ok(checked_dict)
+            for params_in_url in self.get_url_params_as_str(params)
+            for full_url in self.get_full_url(self.BASE_URL, f"{uri}{params_in_url}")
+            for now_time in self.get_now_time()
+            for headers in self.get_headers_auth(
+                f"{now_time}{method}{uri}{params_in_url}",
+                now_time,
+            )
+            for response_bytes in await self.request(
+                url=full_url,
+                method=method,
+                headers=headers,
+            )
+            for response_dict in self.parse_bytes_to_dict(response_bytes)
+            for checked_dict in self.check_response_code(response_dict)
+        )
+
+    async def delete_api_v1_order(
+        self: Self,
+        order_id: str,
+    ) -> Result[dict[str, list[str]], Exception]:
+        """."""
+        uri = f"/api/v1/orders/{order_id}"
+        method = "DELETE"
+        return await do_async(
+            Ok(checked_dict)
+            for full_url in self.get_full_url(self.BASE_URL, uri)
+            for now_time in self.get_now_time()
+            for headers in self.get_headers_auth(
+                f"{now_time}{method}{uri}",
+                now_time,
+            )
+            for response_bytes in await self.request(
+                url=full_url,
+                method=method,
+                headers=headers,
+            )
+            for response_dict in self.parse_bytes_to_dict(response_bytes)
+            for checked_dict in self.check_response_code(response_dict)
+        )
+
     async def get_api_v2_symbols(
         self: Self,
     ) -> Result[dict[str, Any], Exception]:
@@ -276,10 +325,6 @@ class Request(Encrypt):
             for params_in_url in self.get_url_params_as_str(params)
             for full_url in self.get_full_url(self.BASE_URL, f"{uri}{params_in_url}")
             for now_time in self.get_now_time()
-            for headers in self.get_headers_auth(
-                f"{now_time}{method}{uri}{params_in_url}",
-                now_time,
-            )
             for headers in self.get_headers_auth(
                 f"{now_time}{method}{uri}{params_in_url}",
                 now_time,
@@ -322,7 +367,7 @@ class Request(Encrypt):
     async def get_api_v1_bullet_public(
         self: Self,
     ) -> Result[dict[str, dict[str, str]], Exception]:
-        """Get public token.
+        """Get public token for websocket.
 
         https://www.kucoin.com/docs/websocket/basic-info/apply-connect-token/public-token-no-authentication-required-
         """
@@ -617,6 +662,11 @@ class KCN(Request, WebSocket):
         """Init parents."""
         super().__init__()
 
+    def logger_info[T](self: Self, data: T) -> Result[T, Exception]:
+        """Логгер уровня info для do и do_async функций."""
+        logger.info(data)
+        return Ok(data)
+
     def create_book(self: Self) -> Result[None, Exception]:
         """Build own structure.
 
@@ -681,9 +731,45 @@ class KCN(Request, WebSocket):
         await asyncio.sleep(1000)
         return Ok(None)
 
+    async def massive_cancel_order(
+        self: Self,
+        data: list[str],
+    ) -> Result[None, Exception]:
+        """Cancel all order in data list."""
+        for order_id in data:
+            await self.delete_api_v1_order(order_id)
+        return Ok(None)
+
+    def export_order_id_from_orders_list(
+        self: Self,
+        orders: dict[str, list[dict[str, str]]],
+    ) -> Result[list[str], Exception]:
+        """Export id from orders list."""
+        logger.info(f"{orders=}")
+        return Ok([order["id"] for order in orders["items"]])
+
     async def balancer(self: Self) -> Result[None, Exception]:
-        """Monitoring of balance."""
+        """Monitoring of balance.
+
+        Get all active margin orders
+        Cancel all active orders
+        Get all balance
+        Start listen websocket
+        """
         logger.info("balancer")
+        await do_async(
+            Ok(None)
+            for orders_for_cancel in await self.get_api_v1_orders(
+                params={
+                    "status": "active",
+                    "tradeType": "MARGIN_TRADE",
+                },
+            )
+            for orders_list_str in self.export_order_id_from_orders_list(
+                orders_for_cancel,
+            )
+            for _ in await self.massive_cancel_order(orders_list_str)
+        )
         return Ok(None)
 
     async def matching(self: Self) -> Result[None, Exception]:

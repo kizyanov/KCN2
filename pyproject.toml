@@ -15,7 +15,7 @@ dependencies = [
 
 [tool.ruff]
 lint.select = ["ALL"]
-lint.ignore = []
+lint.ignore = ["N815"]
 lint.fixable = ["I", "COM"]
 lint.mccabe.max-complexity = 3
 lint.pydocstyle.convention = "google"
