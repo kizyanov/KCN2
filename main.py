@@ -844,6 +844,8 @@ class KCN(Request, WebSocket):
             )
             for _ in self.logger_info(f"{orders_for_cancel=}")
             for _ in await self.massive_cancel_order(orders_list_str)
+            for balance_accounts in await self.get_api_v1_accounts(params={"type": "margin"})
+            for _ in self.logger_info(f"{balance_accounts}")
         )
 
 
@@ -852,7 +854,7 @@ async def main() -> Result[None, Exception]:
     kcn = KCN()
     match await kcn.pre_init():
         case Ok(None):
-            kcn.logger_info("Pre-init OK!")
+            kcn.logger_success("Pre-init OK!")
             async with asyncio.TaskGroup() as tg:
                 await tg.create_task(kcn.alertest())
                 await tg.create_task(kcn.balancer())
