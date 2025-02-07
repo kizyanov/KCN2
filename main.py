@@ -849,7 +849,7 @@ class KCN(Request, WebSocket):
     def fill_balance(self:Self, data:dict) -> Result[None,Exception]:
         """."""
         for ticket in data['data']:
-            if ticket in self.book:
+            if ticket['currency'] in self.book:
                 self.book[ticket]['balance'] = Decimal(ticket['balance'])
 
     async def pre_init(self: Self) -> Result[None, Exception]:
