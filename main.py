@@ -879,7 +879,6 @@ class KCN(Request, WebSocket):
             for _ in self._fill_base_increment(ticket_info)
         )
 
-        return Ok(None)
 
     async def pre_init(self: Self) -> Result[None, Exception]:
         """Pre-init.
