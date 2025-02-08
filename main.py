@@ -650,6 +650,7 @@ class WebSocket(Encrypt):
     async def runtime_ws(self: Self, ws: connect) -> Result[str, Exception]:
         """Runtime listen websocket all time."""
         async for s in ws:
+            self.logger_info('in runtime_ws')
             try:
                 await do_async(
                     Ok("aa") for _ in await self.welcome_processing_websocket(s)
