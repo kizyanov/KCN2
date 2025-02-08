@@ -426,9 +426,9 @@ class Request(Encrypt):
             for checked_dict in self.check_response_code(response_dict)
         )
 
-    async def get_url_for_websocket(self: Self, data: dict) -> Result[str, Exception]:
+    def get_url_for_websocket(self: Self, data: dict) -> Result[str, Exception]:
         """."""
-        return await do_async(
+        return do(
             Ok(f"{url}?token={token}&connectId={uuid_str}")
             for token in self.export_token_from_api_v1_bullet(data)
             for url in self.export_url_from_api_v1_bullet(data)
