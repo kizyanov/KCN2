@@ -643,6 +643,7 @@ class WebSocket(Encrypt):
             Ok(_)
             for welcome_data_websocket in await self.recv_data_from_websocket(dd)
             for welcome in self.parse_bytes_to_dict(welcome_data_websocket)
+            for _ in self.logger_info(welcome)
             for _ in self.check_welcome_msg_from_websocket(welcome)
         )
 
@@ -651,7 +652,9 @@ class WebSocket(Encrypt):
         async for s in ws:
             try:
                 await do_async(
-                    Ok("aa") for _ in await self.welcome_processing_websocket(s)
+                    Ok("aa") 
+                    
+                    for _ in await self.welcome_processing_websocket(s)
                 )
             except websockets_exceptions.ConnectionClosed as exc:
                 logger.exception(exc)
