@@ -917,9 +917,10 @@ async def main() -> Result[None, Exception]:
         case Ok(kcn):
             kcn.logger_success("Pre-init OK!")
             async with asyncio.TaskGroup() as tg:
-                #     await tg.create_task(kcn.alertest())
                 await tg.create_task(kcn.balancer())
             #     await tg.create_task(kcn.matching())
+            
+                #     await tg.create_task(kcn.alertest())
         case Err(exc):
             kcn.logger_exception(exc)
             return Err(exc)
