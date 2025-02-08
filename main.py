@@ -760,7 +760,6 @@ class KCN(Request, WebSocket):
         }
         return Ok(None)
 
-
     def export_account_usdt_from_api_v3_margin_accounts(
         self: Self,
         data: dict[str, Any],
@@ -840,18 +839,43 @@ class KCN(Request, WebSocket):
         logger.info("matching")
         return Ok(None)
 
-    def fill_balance(self:Self, data:dict) -> Result[None,Exception]:
+    def _fill_balance(self: Self, data: dict) -> Result[None, Exception]:
         """."""
-        for ticket in data['data']:
-            if ticket['currency'] in self.book:
-                self.book[ticket['currency']]['balance'] = Decimal(ticket['balance'])
+        for ticket in data["data"]:
+            if ticket["currency"] in self.book:
+                self.book[ticket["currency"]]["balance"] = Decimal(ticket["balance"])
         return Ok(None)
 
-    def fill_base_increment(self:Self, data:dict) -> Result[None,Exception]:
+    async def fill_balance(self: Self) -> Result[None, Exception]:
         """."""
-        for out_side_ticket in data['data']:
-            if out_side_ticket['baseCurrency'] in self.book and out_side_ticket['quoteCurrency'] =='USDT':
-                self.book[out_side_ticket['baseCurrency']]['increment'] = Decimal(out_side_ticket['baseIncrement'])
+        return await do_async(
+            Ok(None)
+            for balance_accounts in await self.get_api_v1_accounts(
+                params={"type": "margin"},
+            )
+            for _ in self._fill_balance(balance_accounts)
+        )
+
+        return Ok(None)
+
+    def _fill_base_increment(self: Self, data: dict) -> Result[None, Exception]:
+        """."""
+        for out_side_ticket in data["data"]:
+            if (
+                out_side_ticket["baseCurrency"] in self.book
+                and out_side_ticket["quoteCurrency"] == "USDT"
+            ):
+                self.book[out_side_ticket["baseCurrency"]]["increment"] = Decimal(
+                    out_side_ticket["baseIncrement"],
+                )
+
+    async def fill_base_increment(self: Self) -> Result[None, Exception]:
+        """."""
+        return await do_async(
+            Ok(None)
+            for ticket_info in await self.get_api_v2_symbols()
+            for _ in self._fill_base_increment(ticket_info)
+        )
 
         return Ok(None)
 
@@ -876,14 +900,13 @@ class KCN(Request, WebSocket):
                 orders_for_cancel,
             )
             for _ in await self.massive_cancel_order(orders_list_str)
-            for balance_accounts in await self.get_api_v1_accounts(
-                params={"type": "margin"},
-            )
-            for _ in self.fill_balance(balance_accounts)
-            for ticket_info in await self.get_api_v2_symbols()
-            for _ in self.fill_base_increment(ticket_info)
-            for _ in self.logger_info(self.book)            
+            for _ in await self.fill_balance()
+            for _ in await self.fill_base_increment()
+            for _ in self.logger_info(self.book)
         )
+
+
+# meow anton - baka des ^^
 
 
 async def main() -> Result[None, Exception]:
