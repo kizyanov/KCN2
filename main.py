@@ -136,7 +136,7 @@ class Encrypt(Base):
 
     def parse_bytes_to_dict(
         self: Self,
-        data: bytes,
+        data: bytes | str,
     ) -> Result[dict[str, Any], Exception]:
         """Parse bytes[json] to dict.
 
@@ -426,13 +426,25 @@ class Request(Encrypt):
             for checked_dict in self.check_response_code(response_dict)
         )
 
-    def get_url_for_websocket(self: Self, data: dict) -> Result[str, Exception]:
-        """."""
+    def get_url_for_websocket(
+        self: Self, data: dict[str, str]
+    ) -> Result[str, Exception]:
+        """Get complete url for websocket.
+
+        exp: wss://ws-api-spot.kucoin.com/?token=xxx&[connectId=xxxxx]
+        """
         return do(
-            Ok(f"{url}?token={token}&connectId={uuid_str}")
-            for token in self.export_token_from_api_v1_bullet(data)
+            Ok(complete_url)
             for url in self.export_url_from_api_v1_bullet(data)
+            for token in self.export_token_from_api_v1_bullet(data)
             for uuid_str in self.get_uuid4()
+            for complete_url in self.cancatinate_str(
+                url,
+                "?token=",
+                token,
+                "&connectId=",
+                uuid_str,
+            )
         )
 
     def export_url_from_api_v1_bullet(
@@ -447,7 +459,7 @@ class Request(Encrypt):
 
     def export_token_from_api_v1_bullet(
         self: Self,
-        data: dict[str, dict[str, str]],
+        data: dict[str, Any],
     ) -> Result[str, Exception]:
         """Get token for public websocket."""
         try:
@@ -592,28 +604,6 @@ class WebSocket(Encrypt):
             return Ok(None)
         return Err(Exception(f"Error parse welcome from websocket:{data}"))
 
-    def get_tunnel_websocket(self: Self) -> Result[dict[str, str], Exception]:
-        """."""
-        return Ok(
-            {
-                "id": str(int(time() * 1000)),
-                "type": "openTunnel",
-                "newTunnelId": "all_klines2",
-            },
-        )
-
-    def get_klines(self: Self) -> Result[dict[str, str | bool], Exception]:
-        """."""
-        return Ok(
-            {
-                "id": str(int(time() * 1000)),
-                "type": "subscribe",
-                "topic": "/market/candles:BTC-USDT_1hour",
-                "privateChannel": False,
-                "tunnelId": "all_klines2",
-            },
-        )
-
     async def send_data_to_ws(
         self: Self,
         ws: ClientConnection,
@@ -628,8 +618,8 @@ class WebSocket(Encrypt):
 
     async def welcome_processing_websocket(
         self: Self,
-        dd: ClientConnection,
-    ) -> Result[bytes, Exception]:
+        cc: ClientConnection,
+    ) -> Result[None, Exception]:
         """When the connection on websocket is successfully established.
 
         the system will send a welcome message.
@@ -640,27 +630,67 @@ class WebSocket(Encrypt):
         }
         """
         return await do_async(
-            Ok(_)
-            for welcome_data_websocket in await self.recv_data_from_websocket(dd)
+            Ok(None)
+            for welcome_data_websocket in await self.recv_data_from_websocket(cc)
             for welcome in self.parse_bytes_to_dict(welcome_data_websocket)
-            for _ in self.logger_info(welcome)
             for _ in self.check_welcome_msg_from_websocket(welcome)
         )
+
+    def check_ack_websocket(
+        self: Self, req: dict[str, Any], res: dict[str, Any]
+    ) -> Result[None, Exception]:
+        """Check ack from websocket on subscribe."""
+        if req["id"] == res["id"]:
+            return Ok(None)
+        else:
+            logger.exception(Exception(f"{req=} != {res}"))
+            return Err(Exception(f"{req=} != {res}"))
+
+    async def ack_processing_websocket(
+        self: Self,
+        ws_inst: ClientConnection,
+        subsribe_msg: dict[str, str | bool],
+    ) -> Result[None, Exception]:
+        """."""
+        return await do_async(
+            Ok(None)
+            for _ in await self.send_data_to_ws(ws_inst, subsribe_msg)
+            for ack_subscribe in await self.recv_data_from_websocket(ws_inst)
+            for ack_subscribe_dict in self.parse_bytes_to_dict(ack_subscribe)
+            for _ in self.check_ack_websocket(subsribe_msg, ack_subscribe_dict)
+        )
+
+    async def listen_balance_msg(
+        self: Self, ws_inst: ClientConnection
+    ) -> Result[None, Exception]:
+        """Listen balance msgs."""
+        while True:
+            match await self.recv_data_from_websocket(ws_inst):
+                case Ok(msg):
+                    logger.success(msg)
+                case Err(exc):
+                    logger.exception(exc)
+                    return Err(exc)
+                case _:
+                    logger.error("unexpected error")
+                    return Err(Exception("unexpected error"))
 
     async def runtime_ws(
         self: Self,
         ws: connect,
-        subsribe_msg: dict,
+        subsribe_msg: dict[str, str | bool],
     ) -> Result[str, Exception]:
         """Runtime listen websocket all time."""
-        async for s in ws:
+        async for ws_inst in ws:
             self.logger_info("in runtime_ws")
             try:
                 match await do_async(
                     Ok("aa")
-                    for _ in await self.welcome_processing_websocket(s)
-                    for d in await self.send_data_to_ws(s, subsribe_msg)
-                    for _ in self.logger_info(d)
+                    # get welcome msg
+                    for _ in await self.welcome_processing_websocket(ws_inst)
+                    # subscribe to topic
+                    for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
+                    for _ in await self.listen_balance_msg(ws_inst)
                 ):
                     case Ok(v):
                         self.logger_info(v)
@@ -675,14 +705,11 @@ class WebSocket(Encrypt):
     async def recv_data_from_websocket(
         self: Self,
         ws: ClientConnection,
-    ) -> Result[bytes, Exception]:
+    ) -> Result[str | bytes, Exception]:
         """."""
         try:
             res = await ws.recv()
-            if isinstance(res, bytes):
-                return Ok(res)
-            logger.info(res)
-            return Err(Exception(f"Bad data type:{res}"))
+            return Ok(res)
 
         except (
             websockets_exceptions.ConnectionClosed,
@@ -763,7 +790,7 @@ class KCN(Request, WebSocket):
             }
         }
         """
-        self.book: dict[str, dict[str, str]] = {
+        self.book: dict[str, dict[str, str | Decimal]] = {
             ticket: {} for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
         }
         return Ok(None)
@@ -825,10 +852,28 @@ class KCN(Request, WebSocket):
 
     def export_order_id_from_orders_list(
         self: Self,
-        orders: dict[str, list[dict[str, str]]],
+        orders: dict[str, Any],
     ) -> Result[list[str], Exception]:
         """Export id from orders list."""
         return Ok([order["id"] for order in orders["data"]["items"]])
+
+    def get_msg_for_subscribe_balance(
+        self: Self,
+    ) -> Result[dict[str, str | bool], Exception]:
+        """Get msg for subscribe to balance kucoin."""
+        return do(
+            Ok(
+                {
+                    "id": uuid_str,
+                    "type": "subscribe",
+                    "topic": "/account/balance",
+                    "privateChannel": True,
+                    "response": True,
+                }
+            )
+            for default_uuid4 in self.get_default_uuid4()
+            for uuid_str in self.format_to_str_uuid(default_uuid4)
+        )
 
     async def balancer(self: Self) -> Result[None, Exception]:
         """Monitoring of balance.
@@ -842,22 +887,13 @@ class KCN(Request, WebSocket):
         return await do_async(
             Ok(None)
             for private_token in await self.get_api_v1_bullet_private()
-            for _ in self.logger_info(private_token)
             for checked_dict in self.check_response_code(private_token)
-            for _ in self.logger_info(checked_dict)
             for url_ws in self.get_url_for_websocket(checked_dict)
-            for _ in self.logger_info(url_ws)
             for ws in self.get_websocket(url_ws)
-            for _ in self.logger_info(ws)
+            for msg_subscribe_balance in self.get_msg_for_subscribe_balance()
             for _ in await self.runtime_ws(
                 ws,
-                {
-                    "id": 154591066073912312,
-                    "type": "subscribe",
-                    "topic": "/account/balance",
-                    "privateChannel": True,
-                    "response": True,
-                },
+                msg_subscribe_balance,
             )
         )
 
@@ -866,7 +902,7 @@ class KCN(Request, WebSocket):
         logger.info("matching")
         return Ok(None)
 
-    def _fill_balance(self: Self, data: dict) -> Result[None, Exception]:
+    def _fill_balance(self: Self, data: dict[str, Any]) -> Result[None, Exception]:
         """."""
         for ticket in data["data"]:
             if ticket["currency"] in self.book:
@@ -885,7 +921,10 @@ class KCN(Request, WebSocket):
 
         return Ok(None)
 
-    def _fill_base_increment(self: Self, data: dict) -> Result[None, Exception]:
+    # nu cho jopki kak dila
+    def _fill_base_increment(
+        self: Self, data: dict[str, Any]
+    ) -> Result[None, Exception]:
         """."""
         for out_side_ticket in data["data"]:
             base_currency = out_side_ticket["baseCurrency"]
@@ -906,7 +945,7 @@ class KCN(Request, WebSocket):
             for _ in self._fill_base_increment(ticket_info)
         )
 
-    async def pre_init(self: Self) -> Result[None, Exception]:
+    async def pre_init(self: Self) -> Result[Self, Exception]:
         """Pre-init.
 
         get all open orders
@@ -937,14 +976,12 @@ class KCN(Request, WebSocket):
 
 async def main() -> Result[None, Exception]:
     """Collect of major func."""
-    match await KCN().pre_init():
+    kcn = KCN()
+    match await kcn.pre_init():
         case Ok(kcn):
             kcn.logger_success("Pre-init OK!")
             async with asyncio.TaskGroup() as tg:
                 await tg.create_task(kcn.balancer())
-            #     await tg.create_task(kcn.matching())
-
-            #     await tg.create_task(kcn.alertest())
         case Err(exc):
             kcn.logger_exception(exc)
             return Err(exc)
