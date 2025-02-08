@@ -831,7 +831,11 @@ class KCN(Request, WebSocket):
         Start listen websocket
         """
         logger.info("balancer")
-        return Ok(None)
+        return await do_async(
+            Ok(None)
+            for private_token in await self.get_api_v1_bullet_private()
+            for _ in self.logger_success(private_token)
+        )
 
     async def matching(self: Self) -> Result[None, Exception]:
         """Monitoring of matching order."""
@@ -878,7 +882,6 @@ class KCN(Request, WebSocket):
             for _ in self._fill_base_increment(ticket_info)
         )
 
-
     async def pre_init(self: Self) -> Result[None, Exception]:
         """Pre-init.
 
@@ -902,8 +905,6 @@ class KCN(Request, WebSocket):
             for _ in await self.massive_cancel_order(orders_list_str)
             for _ in await self.fill_balance()
             for _ in await self.fill_base_increment()
-            for private_token in await self.get_api_v1_bullet_private()
-            for _ in self.logger_success(private_token)
         )
 
 
@@ -915,9 +916,9 @@ async def main() -> Result[None, Exception]:
     match await KCN().pre_init():
         case Ok(kcn):
             kcn.logger_success("Pre-init OK!")
-            # async with asyncio.TaskGroup() as tg:
-            #     await tg.create_task(kcn.alertest())
-            #     await tg.create_task(kcn.balancer())
+            async with asyncio.TaskGroup() as tg:
+                #     await tg.create_task(kcn.alertest())
+                await tg.create_task(kcn.balancer())
             #     await tg.create_task(kcn.matching())
         case Err(exc):
             kcn.logger_exception(exc)
