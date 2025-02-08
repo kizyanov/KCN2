@@ -647,13 +647,17 @@ class WebSocket(Encrypt):
             for _ in self.check_welcome_msg_from_websocket(welcome)
         )
 
-    async def runtime_ws(self: Self, ws: connect) -> Result[str, Exception]:
+    async def runtime_ws(
+        self: Self, ws: connect, subsribe_msg: dict,
+    ) -> Result[str, Exception]:
         """Runtime listen websocket all time."""
         async for s in ws:
-            self.logger_info('in runtime_ws')
+            self.logger_info("in runtime_ws")
             try:
                 await do_async(
                     Ok("aa") for _ in await self.welcome_processing_websocket(s)
+                    for d in await self.send_data_to_ws(subsribe_msg)
+                    for _ in self.logger_info(d)
                 )
             except websockets_exceptions.ConnectionClosed as exc:
                 logger.exception(exc)
@@ -836,7 +840,16 @@ class KCN(Request, WebSocket):
             for _ in self.logger_info(url_ws)
             for ws in self.get_websocket(url_ws)
             for _ in self.logger_info(ws)
-            for _ in await self.runtime_ws(ws)
+            for _ in await self.runtime_ws(
+                ws,
+                {
+                    "id": 154591066073912312,
+                    "type": "subscribe",
+                    "topic": "/account/balance",
+                    "privateChannel": True,
+                    "response": True,
+                },
+            )
         )
 
     async def matching(self: Self) -> Result[None, Exception]:
