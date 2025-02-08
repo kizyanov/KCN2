@@ -869,6 +869,7 @@ class KCN(Request, WebSocket):
                 self.book[base_currency]["increment"] = Decimal(
                     out_side_ticket["baseIncrement"],
                 )
+        return Ok(None)
 
     async def fill_base_increment(self: Self) -> Result[None, Exception]:
         """."""
