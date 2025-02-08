@@ -652,9 +652,7 @@ class WebSocket(Encrypt):
         async for s in ws:
             try:
                 await do_async(
-                    Ok("aa") 
-                    
-                    for _ in await self.welcome_processing_websocket(s)
+                    Ok("aa") for _ in await self.welcome_processing_websocket(s)
                 )
             except websockets_exceptions.ConnectionClosed as exc:
                 logger.exception(exc)
@@ -830,9 +828,13 @@ class KCN(Request, WebSocket):
         return await do_async(
             Ok(None)
             for private_token in await self.get_api_v1_bullet_private()
+            for _ in self.logger_info(private_token)
             for checked_dict in self.check_response_code(private_token)
+            for _ in self.logger_info(checked_dict)
             for url_ws in self.get_url_for_websocket(checked_dict)
+            for _ in self.logger_info(url_ws)
             for ws in self.get_websocket(url_ws)
+            for _ in self.logger_info(ws)
             for _ in await self.runtime_ws(ws)
         )
 
