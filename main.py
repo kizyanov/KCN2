@@ -431,12 +431,12 @@ class Request(Encrypt):
         return await do_async(
             Ok(f"{url}?token={token}&connectId={uuid_str}")
             for data in await self.get_api_v1_bullet_public()
-            for token in self.export_token_from_api_v1_bullet_public(data)
-            for url in self.export_url_from_api_v1_bullet_public(data)
+            for token in self.export_token_from_api_v1_bullet(data)
+            for url in self.export_url_from_api_v1_bullet(data)
             for uuid_str in self.get_uuid4()
         )
 
-    def export_url_from_api_v1_bullet_public(
+    def export_url_from_api_v1_bullet(
         self: Self,
         data: dict[str, Any],
     ) -> Result[str, Exception]:
@@ -446,7 +446,7 @@ class Request(Encrypt):
         except (KeyError, TypeError) as exc:
             return Err(Exception(f"Miss keys instanceServers in {exc} by {data}"))
 
-    def export_token_from_api_v1_bullet_public(
+    def export_token_from_api_v1_bullet(
         self: Self,
         data: dict[str, dict[str, str]],
     ) -> Result[str, Exception]:
@@ -834,7 +834,10 @@ class KCN(Request, WebSocket):
         return await do_async(
             Ok(None)
             for private_token in await self.get_api_v1_bullet_private()
-            for _ in self.logger_success(private_token)
+            for checked_dict in self.check_response_code(private_token)
+            for token in self.export_token_from_api_v1_bullet(checked_dict)
+            for url in self.export_url_from_api_v1_bullet(checked_dict)
+            for _ in self.logger_success(f"{checked_dict=} {token=} {url=}")
         )
 
     async def matching(self: Self) -> Result[None, Exception]:
