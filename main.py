@@ -681,6 +681,7 @@ class WebSocket(Encrypt):
             res = await ws.recv()
             if isinstance(res, bytes):
                 return Ok(res)
+            logger.info(res)
             return Err(Exception(f"Bad data type:{res}"))
 
         except (
