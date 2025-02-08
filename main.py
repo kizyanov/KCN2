@@ -903,6 +903,8 @@ class KCN(Request, WebSocket):
             for _ in await self.massive_cancel_order(orders_list_str)
             for _ in await self.fill_balance()
             for _ in await self.fill_base_increment()
+            for private_token in await self.get_api_v1_bullet_private()
+            for _ in self.logger_success(private_token)
         )
 
 
