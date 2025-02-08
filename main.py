@@ -656,12 +656,17 @@ class WebSocket(Encrypt):
         async for s in ws:
             self.logger_info("in runtime_ws")
             try:
-                await do_async(
+                match await do_async(
                     Ok("aa")
                     for _ in await self.welcome_processing_websocket(s)
                     for d in await self.send_data_to_ws(s, subsribe_msg)
                     for _ in self.logger_info(d)
-                )
+                ):
+                    case Ok(v):
+                        self.logger_info(v)
+                    case Err(exc):
+                        logger.exception(exc)
+                        return Err(exc)
             except websockets_exceptions.ConnectionClosed as exc:
                 logger.exception(exc)
                 return Err(exc)
