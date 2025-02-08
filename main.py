@@ -659,7 +659,7 @@ class WebSocket(Encrypt):
                 await do_async(
                     Ok("aa")
                     for _ in await self.welcome_processing_websocket(s)
-                    for d in await self.send_data_to_ws(subsribe_msg)
+                    for d in await self.send_data_to_ws(s, subsribe_msg)
                     for _ in self.logger_info(d)
                 )
             except websockets_exceptions.ConnectionClosed as exc:
