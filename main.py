@@ -559,7 +559,7 @@ class Request(Encrypt):
                 ) as response,
             ):
                 res = await response.read()  # bytes
-                logger.info(f"{response.status}:{method}:{url}")
+                logger.success(f"{response.status}:{method}:{url}")
                 return Ok(res)
         except ClientConnectorError as exc:
             logger.exception(exc)
@@ -820,7 +820,6 @@ class KCN(Request, WebSocket):
         orders: dict[str, list[dict[str, str]]],
     ) -> Result[list[str], Exception]:
         """Export id from orders list."""
-        logger.info(f"{orders=}")
         return Ok([order["id"] for order in orders["data"]["items"]])
 
     async def balancer(self: Self) -> Result[None, Exception]:
