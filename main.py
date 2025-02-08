@@ -604,28 +604,6 @@ class WebSocket(Encrypt):
             return Ok(None)
         return Err(Exception(f"Error parse welcome from websocket:{data}"))
 
-    def get_tunnel_websocket(self: Self) -> Result[dict[str, str], Exception]:
-        """."""
-        return Ok(
-            {
-                "id": str(int(time() * 1000)),
-                "type": "openTunnel",
-                "newTunnelId": "all_klines2",
-            },
-        )
-
-    def get_klines(self: Self) -> Result[dict[str, str | bool], Exception]:
-        """."""
-        return Ok(
-            {
-                "id": str(int(time() * 1000)),
-                "type": "subscribe",
-                "topic": "/market/candles:BTC-USDT_1hour",
-                "privateChannel": False,
-                "tunnelId": "all_klines2",
-            },
-        )
-
     async def send_data_to_ws(
         self: Self,
         ws: ClientConnection,
@@ -640,8 +618,8 @@ class WebSocket(Encrypt):
 
     async def welcome_processing_websocket(
         self: Self,
-        dd: ClientConnection,
-    ) -> Result[bytes, Exception]:
+        cc: ClientConnection,
+    ) -> Result[None, Exception]:
         """When the connection on websocket is successfully established.
 
         the system will send a welcome message.
@@ -652,12 +630,50 @@ class WebSocket(Encrypt):
         }
         """
         return await do_async(
-            Ok(_)
-            for welcome_data_websocket in await self.recv_data_from_websocket(dd)
+            Ok(None)
+            for welcome_data_websocket in await self.recv_data_from_websocket(cc)
             for welcome in self.parse_bytes_to_dict(welcome_data_websocket)
-            for _ in self.logger_info(welcome)
             for _ in self.check_welcome_msg_from_websocket(welcome)
         )
+
+    def check_ack_websocket(
+        self: Self, req: dict[str, Any], res: dict[str, Any]
+    ) -> Result[None, Exception]:
+        """Check ack from websocket on subscribe."""
+        if req["id"] == res["id"]:
+            return Ok(None)
+        else:
+            logger.exception(Exception(f"{req=} != {res}"))
+            return Err(Exception(f"{req=} != {res}"))
+
+    async def ack_processing_websocket(
+        self: Self,
+        ws_inst: ClientConnection,
+        subsribe_msg: dict[str, str | bool],
+    ) -> Result[None, Exception]:
+        """."""
+        return await do_async(
+            Ok(None)
+            for _ in await self.send_data_to_ws(ws_inst, subsribe_msg)
+            for ack_subscribe in await self.recv_data_from_websocket(ws_inst)
+            for ack_subscribe_dict in self.parse_bytes_to_dict(ack_subscribe)
+            for _ in self.check_ack_websocket(subsribe_msg, ack_subscribe_dict)
+        )
+
+    async def listen_balance_msg(
+        self: Self, ws_inst: ClientConnection
+    ) -> Result[None, Exception]:
+        """Listen balance msgs."""
+        while True:
+            match await self.recv_data_from_websocket(ws_inst):
+                case Ok(msg):
+                    logger.success(msg)
+                case Err(exc):
+                    logger.exception(exc)
+                    return Err(exc)
+                case _:
+                    logger.error("unexpected error")
+                    return Err(Exception("unexpected error"))
 
     async def runtime_ws(
         self: Self,
@@ -670,9 +686,11 @@ class WebSocket(Encrypt):
             try:
                 match await do_async(
                     Ok("aa")
+                    # get welcome msg
                     for _ in await self.welcome_processing_websocket(ws_inst)
-                    for d in await self.send_data_to_ws(ws_inst, subsribe_msg)
-                    for _ in self.logger_info(d)
+                    # subscribe to topic
+                    for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
+                    for _ in await self.listen_balance_msg(ws_inst)
                 ):
                     case Ok(v):
                         self.logger_info(v)
