@@ -861,11 +861,12 @@ class KCN(Request, WebSocket):
     def _fill_base_increment(self: Self, data: dict) -> Result[None, Exception]:
         """."""
         for out_side_ticket in data["data"]:
+            base_currency = out_side_ticket["baseCurrency"]
             if (
-                out_side_ticket["baseCurrency"] in self.book
+                base_currency in self.book
                 and out_side_ticket["quoteCurrency"] == "USDT"
             ):
-                self.book[out_side_ticket["baseCurrency"]]["increment"] = Decimal(
+                self.book[base_currency]["increment"] = Decimal(
                     out_side_ticket["baseIncrement"],
                 )
 
@@ -902,7 +903,6 @@ class KCN(Request, WebSocket):
             for _ in await self.massive_cancel_order(orders_list_str)
             for _ in await self.fill_balance()
             for _ in await self.fill_base_increment()
-            for _ in self.logger_info(self.book)
         )
 
 
