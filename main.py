@@ -426,11 +426,10 @@ class Request(Encrypt):
             for checked_dict in self.check_response_code(response_dict)
         )
 
-    async def get_public_url_for_websocket(self: Self) -> Result[str, Exception]:
+    async def get_url_for_websocket(self: Self, data: dict) -> Result[str, Exception]:
         """."""
         return await do_async(
             Ok(f"{url}?token={token}&connectId={uuid_str}")
-            for data in await self.get_api_v1_bullet_public()
             for token in self.export_token_from_api_v1_bullet(data)
             for url in self.export_url_from_api_v1_bullet(data)
             for uuid_str in self.get_uuid4()
@@ -652,13 +651,7 @@ class WebSocket(Encrypt):
         async for s in ws:
             try:
                 await do_async(
-                    Ok("aa")
-                    for _ in await self.welcome_processing_websocket(s)
-                    for tunnel_dict in self.get_tunnel_websocket()
-                    for _ in await self.send_data_to_ws(s, tunnel_dict)
-                    for klines_dict in self.get_klines()
-                    for _ in await self.send_data_to_ws(s, klines_dict)
-                    for asd in await self.recv_data_from_websocket(s)
+                    Ok("aa") for _ in await self.welcome_processing_websocket(s)
                 )
             except websockets_exceptions.ConnectionClosed as exc:
                 logger.exception(exc)
@@ -835,9 +828,9 @@ class KCN(Request, WebSocket):
             Ok(None)
             for private_token in await self.get_api_v1_bullet_private()
             for checked_dict in self.check_response_code(private_token)
-            for token in self.export_token_from_api_v1_bullet(checked_dict)
-            for url in self.export_url_from_api_v1_bullet(checked_dict)
-            for _ in self.logger_success(f"{checked_dict=} {token=} {url=}")
+            for url_ws in self.get_url_for_websocket(checked_dict)
+            for ws in self.get_websocket(url_ws)
+            for _ in await self.runtime_ws(ws)
         )
 
     async def matching(self: Self) -> Result[None, Exception]:
