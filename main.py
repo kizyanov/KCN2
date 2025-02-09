@@ -28,6 +28,16 @@ class Base:
         logger.info(data)
         return Ok(data)
 
+    def logger_exception[T](self: Self, data: T) -> Result[T, Exception]:
+        """Exception logger for Pipes."""
+        logger.exception(data)
+        return Ok(data)
+
+    def logger_success[T](self: Self, data: T) -> Result[T, Exception]:
+        """Success logger for Pipes."""
+        logger.success(data)
+        return Ok(data)
+
 
 class Encrypt(Base):
     """All methods for encrypt data."""
@@ -766,21 +776,6 @@ class KCN(Request, WebSocket):
     def __init__(self) -> None:
         """Init parents."""
         super().__init__()
-
-    def logger_info[T](self: Self, data: T) -> Result[T, Exception]:
-        """Логгер уровня info для do и do_async функций."""
-        logger.info(data)
-        return Ok(data)
-
-    def logger_exception[T](self: Self, data: T) -> Result[T, Exception]:
-        """Логгер уровня exception для do и do_async функций."""
-        logger.exception(data)
-        return Ok(data)
-
-    def logger_success[T](self: Self, data: T) -> Result[T, Exception]:
-        """Логгер уровня success для do и do_async функций."""
-        logger.success(data)
-        return Ok(data)
 
     def create_book(self: Self) -> Result[None, Exception]:
         """Build own structure.
