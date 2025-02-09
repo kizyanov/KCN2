@@ -790,7 +790,9 @@ class KCN(Request, WebSocket):
         self: Self, data: dict[str, dict[str, str]]
     ) -> Result[None, Exception]:
         """Fill balance from event balance websocket."""
-        self.book[data["data"]["currency"]]["balance"] = Decimal(data["data"]["total"])
+        token_symbol = data["data"]["currency"]
+        if token_symbol in self.book:
+            self.book[token_symbol]["balance"] = Decimal(data["data"]["total"])
         return Ok(None)
 
     async def listen_balance_msg(
