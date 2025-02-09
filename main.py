@@ -666,14 +666,20 @@ class WebSocket(Encrypt):
         """Listen balance msgs."""
         raise NotImplementedError()
 
-    async def runtime_ws(
+    async def listen_matching_msg(
+        self: Self, ws_inst: ClientConnection
+    ) -> Result[None, Exception]:
+        """Listen matching msgs."""
+        raise NotImplementedError()
+
+    async def runtime_balance_ws(
         self: Self,
         ws: connect,
         subsribe_msg: dict[str, str | bool],
     ) -> Result[str, Exception]:
         """Runtime listen websocket all time."""
         async for ws_inst in ws:
-            self.logger_info("in runtime_ws")
+            self.logger_info("in runtime_balance_ws")
             try:
                 match await do_async(
                     Ok("aa")
@@ -682,6 +688,33 @@ class WebSocket(Encrypt):
                     # subscribe to topic
                     for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
                     for _ in await self.listen_balance_msg(ws_inst)
+                ):
+                    case Ok(v):
+                        self.logger_info(v)
+                    case Err(exc):
+                        logger.exception(exc)
+                        return Err(exc)
+            except websockets_exceptions.ConnectionClosed as exc:
+                logger.exception(exc)
+                return Err(exc)
+        return Ok("")
+
+    async def runtime_matching_ws(
+        self: Self,
+        ws: connect,
+        subsribe_msg: dict[str, str | bool],
+    ) -> Result[str, Exception]:
+        """Runtime listen websocket all time."""
+        async for ws_inst in ws:
+            self.logger_info("in runtime_matching_ws")
+            try:
+                match await do_async(
+                    Ok("aa")
+                    # get welcome msg
+                    for _ in await self.welcome_processing_websocket(ws_inst)
+                    # subscribe to topic
+                    for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
+                    for _ in await self.listen_matching_msg(ws_inst)
                 ):
                     case Ok(v):
                         self.logger_info(v)
@@ -816,6 +849,26 @@ class KCN(Request, WebSocket):
                     logger.error("unexpected error")
                     return Err(Exception("unexpected error"))
 
+    async def listen_matching_msg(
+        self: Self, ws_inst: ClientConnection
+    ) -> Result[None, Exception]:
+        """Listen matching msgs."""
+        while True:
+            match await self.recv_data_from_websocket(ws_inst):
+                case Ok(msg):
+                    match self.parse_bytes_to_dict(msg):
+                        case Ok(value):
+                            logger.success(value)
+
+                        case Err(exc):
+                            return Err(exc)
+                case Err(exc):
+                    logger.exception(exc)
+                    return Err(exc)
+                case _:
+                    logger.error("unexpected error")
+                    return Err(Exception("unexpected error"))
+
     def export_account_usdt_from_api_v3_margin_accounts(
         self: Self,
         data: dict[str, Any],
@@ -896,12 +949,27 @@ class KCN(Request, WebSocket):
             for uuid_str in self.format_to_str_uuid(default_uuid4)
         )
 
+    def get_msg_for_subscribe_matching(
+        self: Self,
+    ) -> Result[dict[str, str | bool], Exception]:
+        """Get msg for subscribe to matching kucoin."""
+        return do(
+            Ok(
+                {
+                    "id": uuid_str,
+                    "type": "subscribe",
+                    "topic": "/spotMarket/tradeOrdersV2",
+                    "privateChannel": True,
+                    "response": True,
+                }
+            )
+            for default_uuid4 in self.get_default_uuid4()
+            for uuid_str in self.format_to_str_uuid(default_uuid4)
+        )
+
     async def balancer(self: Self) -> Result[None, Exception]:
         """Monitoring of balance.
 
-        Get all active margin orders
-        Cancel all active orders
-        Get all balance
         Start listen websocket
         """
         logger.info("balancer")
@@ -912,16 +980,30 @@ class KCN(Request, WebSocket):
             for url_ws in self.get_url_for_websocket(checked_dict)
             for ws in self.get_websocket(url_ws)
             for msg_subscribe_balance in self.get_msg_for_subscribe_balance()
-            for _ in await self.runtime_ws(
+            for _ in await self.runtime_balance_ws(
                 ws,
                 msg_subscribe_balance,
             )
         )
 
     async def matching(self: Self) -> Result[None, Exception]:
-        """Monitoring of matching order."""
+        """Monitoring of matching order.
+
+        Start listen websocket
+        """
         logger.info("matching")
-        return Ok(None)
+        return await do_async(
+            Ok(None)
+            for private_token in await self.get_api_v1_bullet_private()
+            for checked_dict in self.check_response_code(private_token)
+            for url_ws in self.get_url_for_websocket(checked_dict)
+            for ws in self.get_websocket(url_ws)
+            for msg_subscribe_matching in self.get_msg_for_subscribe_matching()
+            for _ in await self.runtime_matching_ws(
+                ws,
+                msg_subscribe_matching,
+            )
+        )
 
     def _fill_balance(self: Self, data: dict[str, Any]) -> Result[None, Exception]:
         """."""
@@ -1003,6 +1085,7 @@ async def main() -> Result[None, Exception]:
             kcn.logger_success("Pre-init OK!")
             async with asyncio.TaskGroup() as tg:
                 await tg.create_task(kcn.balancer())
+                await tg.create_task(kcn.matching())
         case Err(exc):
             kcn.logger_exception(exc)
             return Err(exc)
