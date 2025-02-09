@@ -664,16 +664,7 @@ class WebSocket(Encrypt):
         self: Self, ws_inst: ClientConnection
     ) -> Result[None, Exception]:
         """Listen balance msgs."""
-        while True:
-            match await self.recv_data_from_websocket(ws_inst):
-                case Ok(msg):
-                    logger.success(msg)
-                case Err(exc):
-                    logger.exception(exc)
-                    return Err(exc)
-                case _:
-                    logger.error("unexpected error")
-                    return Err(Exception("unexpected error"))
+        raise NotImplementedError()
 
     async def runtime_ws(
         self: Self,
@@ -794,6 +785,34 @@ class KCN(Request, WebSocket):
             ticket: {} for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
         }
         return Ok(None)
+
+    def event_fill_balance(
+        self: Self, data: dict[str, dict[str, str]]
+    ) -> Result[None, Exception]:
+        """Fill balance from event balance websocket."""
+        self.book[data["data"]["currency"]]["balance"] = Decimal(data["data"]["total"])
+        return Ok(None)
+
+    async def listen_balance_msg(
+        self: Self, ws_inst: ClientConnection
+    ) -> Result[None, Exception]:
+        """Listen balance msgs."""
+        while True:
+            match await self.recv_data_from_websocket(ws_inst):
+                case Ok(msg):
+                    match self.parse_bytes_to_dict(msg):
+                        case Ok(value):
+                            logger.success(value)
+                            self.event_fill_balance(value)
+                            self.logger_info(self.book)
+                        case Err(exc):
+                            return Err(exc)
+                case Err(exc):
+                    logger.exception(exc)
+                    return Err(exc)
+                case _:
+                    logger.error("unexpected error")
+                    return Err(Exception("unexpected error"))
 
     def export_account_usdt_from_api_v3_margin_accounts(
         self: Self,
