@@ -66,6 +66,16 @@ class KCN:
         """Get list chat id for current send."""
         return Ok(self.TELEGRAM_BOT_CHAT_ID)
 
+    def check_telegram_response(
+        self: Self,
+        data: dict[str, str | bool],
+    ) -> Result[None, Exception]:
+        """Check telegram response on msg."""
+        if data["ok"]:
+            return Ok(None)
+        else:
+            return Err(Exception(f"{data}"))
+
     async def send_msg_to_each_chat_id(
         self: Self,
         chat_ids: list[str],
@@ -82,11 +92,14 @@ class KCN:
                 for response_bytes in await self.request(
                     url=telegram_url,
                     method=method,
-                    headers={},
+                    headers={
+                        "Content-Type": "application/json",
+                    },
                     data=msg_bytes,
                 )
                 for response_dict in self.parse_bytes_to_dict(response_bytes)
                 for _ in self.logger_info(response_dict)
+                for _ in self.check_telegram_response(response_dict)
             )
         return Ok(None)
 
