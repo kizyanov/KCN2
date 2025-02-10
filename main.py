@@ -1,7 +1,7 @@
 """KCN2 trading bot for kucoin."""
 
 import asyncio
-from base64 import b64decode, b64encode
+from base64 import b64encode
 from decimal import Decimal
 from hashlib import sha256
 from hmac import HMAC
@@ -77,14 +77,6 @@ class Encrypt(Base):
         """Convert bytes to base64."""
         try:
             return Ok(b64encode(data))
-        except TypeError as exc:
-            logger.exception(exc)
-            return Err(exc)
-
-    def convert_base64_to_bytes(self: Self, data: bytes) -> Result[bytes, Exception]:
-        """Convert base64 to bytes."""
-        try:
-            return Ok(b64decode(data))
         except TypeError as exc:
             logger.exception(exc)
             return Err(exc)
@@ -317,7 +309,7 @@ class Request(Encrypt):
         self: Self,
         order_id: str,
     ) -> Result[dict[str, list[str]], Exception]:
-        """."""
+        """Cancel order by `id`."""
         uri = f"/api/v1/orders/{order_id}"
         method = "DELETE"
         return await do_async(
@@ -414,30 +406,9 @@ class Request(Encrypt):
             for checked_dict in self.check_response_code(response_dict)
         )
 
-    async def get_api_v1_bullet_public(
-        self: Self,
-    ) -> Result[dict[str, dict[str, str]], Exception]:
-        """Get public token for websocket.
-
-        https://www.kucoin.com/docs/websocket/basic-info/apply-connect-token/public-token-no-authentication-required-
-        """
-        uri = "/api/v1/bullet-public"
-        method = "POST"
-        return await do_async(
-            Ok(checked_dict)
-            for headers in self.get_headers_not_auth()
-            for full_url in self.get_full_url(self.BASE_URL, uri)
-            for response_bytes in await self.request(
-                url=full_url,
-                method=method,
-                headers=headers,
-            )
-            for response_dict in self.parse_bytes_to_dict(response_bytes)
-            for checked_dict in self.check_response_code(response_dict)
-        )
-
     def get_url_for_websocket(
-        self: Self, data: dict[str, str]
+        self: Self,
+        data: dict[str, str],
     ) -> Result[str, Exception]:
         """Get complete url for websocket.
 
@@ -619,7 +590,7 @@ class WebSocket(Encrypt):
         ws: ClientConnection,
         data: dict[str, Any],
     ) -> Result[None, Exception]:
-        """."""
+        """Send data to websocket."""
         return await do_async(
             Ok(response)
             for data_bytes in self.dumps_dict_to_bytes(data)
@@ -647,21 +618,22 @@ class WebSocket(Encrypt):
         )
 
     def check_ack_websocket(
-        self: Self, req: dict[str, Any], res: dict[str, Any]
+        self: Self,
+        req: dict[str, Any],
+        res: dict[str, Any],
     ) -> Result[None, Exception]:
         """Check ack from websocket on subscribe."""
         if req["id"] == res["id"]:
             return Ok(None)
-        else:
-            logger.exception(Exception(f"{req=} != {res}"))
-            return Err(Exception(f"{req=} != {res}"))
+        logger.exception(Exception(f"{req=} != {res}"))
+        return Err(Exception(f"{req=} != {res}"))
 
     async def ack_processing_websocket(
         self: Self,
         ws_inst: ClientConnection,
         subsribe_msg: dict[str, str | bool],
     ) -> Result[None, Exception]:
-        """."""
+        """Ack processing on websocket."""
         return await do_async(
             Ok(None)
             for _ in await self.send_data_to_ws(ws_inst, subsribe_msg)
@@ -671,76 +643,58 @@ class WebSocket(Encrypt):
         )
 
     async def listen_balance_msg(
-        self: Self, ws_inst: ClientConnection
+        self: Self,
+        ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Listen balance msgs."""
-        raise NotImplementedError()
+        raise NotImplementedError
 
     async def listen_matching_msg(
-        self: Self, ws_inst: ClientConnection
+        self: Self,
+        ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Listen matching msgs."""
-        raise NotImplementedError()
+        raise NotImplementedError
 
     async def runtime_balance_ws(
         self: Self,
         ws: connect,
         subsribe_msg: dict[str, str | bool],
-    ) -> Result[str, Exception]:
+    ) -> Result[None, Exception]:
         """Runtime listen websocket all time."""
         async for ws_inst in ws:
-            self.logger_info("in runtime_balance_ws")
-            try:
-                match await do_async(
-                    Ok("aa")
-                    # get welcome msg
-                    for _ in await self.welcome_processing_websocket(ws_inst)
-                    # subscribe to topic
-                    for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
-                    for _ in await self.listen_balance_msg(ws_inst)
-                ):
-                    case Ok(v):
-                        self.logger_info(v)
-                    case Err(exc):
-                        logger.exception(exc)
-                        return Err(exc)
-            except websockets_exceptions.ConnectionClosed as exc:
-                logger.exception(exc)
-                return Err(exc)
-        return Ok("")
+            return await do_async(
+                Ok(None)
+                # get welcome msg
+                for _ in await self.welcome_processing_websocket(ws_inst)
+                # subscribe to topic
+                for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
+                for _ in await self.listen_balance_msg(ws_inst)
+            )
+        return Ok(None)
 
     async def runtime_matching_ws(
         self: Self,
         ws: connect,
         subsribe_msg: dict[str, str | bool],
-    ) -> Result[str, Exception]:
+    ) -> Result[None, Exception]:
         """Runtime listen websocket all time."""
         async for ws_inst in ws:
-            self.logger_info("in runtime_matching_ws")
-            try:
-                match await do_async(
-                    Ok("aa")
-                    # get welcome msg
-                    for _ in await self.welcome_processing_websocket(ws_inst)
-                    # subscribe to topic
-                    for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
-                    for _ in await self.listen_matching_msg(ws_inst)
-                ):
-                    case Ok(v):
-                        self.logger_info(v)
-                    case Err(exc):
-                        logger.exception(exc)
-                        return Err(exc)
-            except websockets_exceptions.ConnectionClosed as exc:
-                logger.exception(exc)
-                return Err(exc)
-        return Ok("")
+            return await do_async(
+                Ok(None)
+                # get welcome msg
+                for _ in await self.welcome_processing_websocket(ws_inst)
+                # subscribe to topic
+                for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
+                for _ in await self.listen_matching_msg(ws_inst)
+            )
+        return Ok(None)
 
     async def recv_data_from_websocket(
         self: Self,
         ws: ClientConnection,
     ) -> Result[str | bytes, Exception]:
-        """."""
+        """Universal recive data from websocket."""
         try:
             res = await ws.recv()
             return Ok(res)
@@ -757,7 +711,7 @@ class WebSocket(Encrypt):
         ws: ClientConnection,
         data: bytes,
     ) -> Result[None, Exception]:
-        """."""
+        """Universal send data to websocket."""
         try:
             await ws.send(data, text=True)
             return Ok(None)
@@ -815,7 +769,8 @@ class KCN(Request, WebSocket):
         return Ok(None)
 
     def event_fill_balance(
-        self: Self, data: dict[str, dict[str, str]]
+        self: Self,
+        data: dict[str, dict[str, str]],
     ) -> Result[None, Exception]:
         """Fill balance from event balance websocket."""
         token_symbol = data["data"]["currency"]
@@ -824,51 +779,36 @@ class KCN(Request, WebSocket):
         return Ok(None)
 
     async def listen_balance_msg(
-        self: Self, ws_inst: ClientConnection
+        self: Self,
+        ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Listen balance msgs."""
         while True:
-            match await self.recv_data_from_websocket(ws_inst):
-                case Ok(msg):
-                    match self.parse_bytes_to_dict(msg):
-                        case Ok(value):
-                            logger.success(value)
-                            self.event_fill_balance(value)
-                            self.logger_info(self.book)
-                        case Err(exc):
-                            return Err(exc)
-                case Err(exc):
-                    logger.exception(exc)
-                    return Err(exc)
-                case _:
-                    logger.error("unexpected error")
-                    return Err(Exception("unexpected error"))
+            await do_async(
+                Ok(None)
+                for msg in await self.recv_data_from_websocket(ws_inst)
+                for value in self.parse_bytes_to_dict(msg)
+                for _ in self.event_fill_balance(value)
+            )
 
     async def listen_matching_msg(
-        self: Self, ws_inst: ClientConnection
+        self: Self,
+        ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Listen matching msgs."""
         while True:
-            match await self.recv_data_from_websocket(ws_inst):
-                case Ok(msg):
-                    match self.parse_bytes_to_dict(msg):
-                        case Ok(value):
-                            logger.success(value)
-
-                        case Err(exc):
-                            return Err(exc)
-                case Err(exc):
-                    logger.exception(exc)
-                    return Err(exc)
-                case _:
-                    logger.error("unexpected error")
-                    return Err(Exception("unexpected error"))
+            await do_async(
+                Ok(None)
+                for msg in await self.recv_data_from_websocket(ws_inst)
+                for value in self.parse_bytes_to_dict(msg)
+                for _ in self.logger_info(value)
+            )
 
     def export_account_usdt_from_api_v3_margin_accounts(
         self: Self,
         data: dict[str, Any],
     ) -> Result[dict[str, Any], Exception]:
-        """."""
+        """Get USDT available from margin account."""
         try:
             for i in [i for i in data["data"]["accounts"] if i["currency"] == "USDT"]:
                 return Ok(i)
@@ -938,7 +878,7 @@ class KCN(Request, WebSocket):
                     "topic": "/account/balance",
                     "privateChannel": True,
                     "response": True,
-                }
+                },
             )
             for default_uuid4 in self.get_default_uuid4()
             for uuid_str in self.format_to_str_uuid(default_uuid4)
@@ -956,7 +896,7 @@ class KCN(Request, WebSocket):
                     "topic": "/spotMarket/tradeOrdersV2",
                     "privateChannel": True,
                     "response": True,
-                }
+                },
             )
             for default_uuid4 in self.get_default_uuid4()
             for uuid_str in self.format_to_str_uuid(default_uuid4)
@@ -1001,14 +941,14 @@ class KCN(Request, WebSocket):
         )
 
     def _fill_balance(self: Self, data: dict[str, Any]) -> Result[None, Exception]:
-        """."""
+        """Export current balance from data."""
         for ticket in data["data"]:
             if ticket["currency"] in self.book:
                 self.book[ticket["currency"]]["balance"] = Decimal(ticket["balance"])
         return Ok(None)
 
     async def fill_balance(self: Self) -> Result[None, Exception]:
-        """."""
+        """Fill all balance by ENVs."""
         return await do_async(
             Ok(None)
             for balance_accounts in await self.get_api_v1_accounts(
@@ -1017,13 +957,12 @@ class KCN(Request, WebSocket):
             for _ in self._fill_balance(balance_accounts)
         )
 
-        return Ok(None)
-
     # nu cho jopki kak dila
     def _fill_base_increment(
-        self: Self, data: dict[str, Any]
+        self: Self,
+        data: dict[str, Any],
     ) -> Result[None, Exception]:
-        """."""
+        """Fill base increment by each token."""
         for out_side_ticket in data["data"]:
             base_currency = out_side_ticket["baseCurrency"]
             if (
@@ -1036,7 +975,7 @@ class KCN(Request, WebSocket):
         return Ok(None)
 
     async def fill_base_increment(self: Self) -> Result[None, Exception]:
-        """."""
+        """Fill base increment from api."""
         return await do_async(
             Ok(None)
             for ticket_info in await self.get_api_v2_symbols()
