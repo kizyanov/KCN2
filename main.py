@@ -73,8 +73,7 @@ class KCN:
         """Check telegram response on msg."""
         if data["ok"]:
             return Ok(None)
-        else:
-            return Err(Exception(f"{data}"))
+        return Err(Exception(f"{data}"))
 
     async def send_msg_to_each_chat_id(
         self: Self,
