@@ -80,7 +80,7 @@ class KCN:
         chat_ids: list[str],
         data: str,
     ) -> Result[None, Exception]:
-        """."""
+        """Send msg for each chat id."""
         method = "POST"
         for chat in chat_ids:
             await do_async(
@@ -817,7 +817,7 @@ class KCN:
         self: Self,
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
-        """Listen balance msgs."""
+        """Infinity loop for listen balance msgs."""
         while True:
             await do_async(
                 Ok(None)
@@ -830,7 +830,7 @@ class KCN:
         self: Self,
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
-        """Listen matching msgs."""
+        """Infinity loop for listen matching msgs."""
         while True:
             await do_async(
                 Ok(None)
