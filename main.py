@@ -20,139 +20,83 @@ from websockets import ClientConnection, connect
 from websockets import exceptions as websockets_exceptions
 
 
-class Base:
-    """Base class for all classes."""
+class KCN:
+    """Main class collect all logic."""
 
-    def logger_info[T](self: Self, data: T) -> Result[T, Exception]:
-        """Info logger for Pipes."""
-        logger.info(data)
-        return Ok(data)
+    def __init__(self: Self) -> None:
+        """Init settings."""
+        # All about excange
+        self.KEY = self.get_env("KEY").unwrap()
+        self.SECRET = self.get_env("SECRET").unwrap()
+        self.PASSPHRASE = self.get_env("PASSPHRASE").unwrap()
+        self.BASE_URL = self.get_env("BASE_URL").unwrap()
 
-    def logger_exception[T](self: Self, data: T) -> Result[T, Exception]:
-        """Exception logger for Pipes."""
-        logger.exception(data)
-        return Ok(data)
+        # all about tokens
+        self.ALL_CURRENCY = self.get_list_env("ALLCURRENCY").unwrap()
+        self.BASE_KEEP = Decimal(self.get_env("BASE_KEEP").unwrap())
 
-    def logger_success[T](self: Self, data: T) -> Result[T, Exception]:
-        """Success logger for Pipes."""
-        logger.success(data)
-        return Ok(data)
+        # All about tlg
+        self.TELEGRAM_BOT_API_KEY = self.get_env("TELEGRAM_BOT_API_KEY").unwrap()
+        self.TELEGRAM_BOT_CHAT_ID = self.get_list_env("TELEGRAM_BOT_CHAT_ID").unwrap()
 
+        logger.success("Settings are OK!")
 
-class Encrypt(Base):
-    """All methods for encrypt data."""
-
-    def cancatinate_str(self: Self, *args: str) -> Result[str, Exception]:
-        """Cancatinate to str."""
-        try:
-            return Ok("".join(args))
-        except TypeError as exc:
-            logger.exception(exc)
-            return Err(exc)
-
-    def get_default_uuid4(self: Self) -> Result[UUID, Exception]:
-        """Get default uuid4."""
-        return Ok(uuid4())
-
-    def format_to_str_uuid(self: Self, data: UUID) -> Result[str, Exception]:
-        """Get str UUID4 and replace `-` symbol to spaces."""
-        return do(
-            Ok(result) for result in self.cancatinate_str(str(data).replace("-", ""))
+    def get_telegram_url(self: Self) -> Result[str, Exception]:
+        """Get url for send telegram msg."""
+        return Ok(
+            f"https://api.telegram.org/bot{self.TELEGRAM_BOT_API_KEY}/sendMessage",
         )
 
-    def get_uuid4(self: Self) -> Result[str, Exception]:
-        """Get uuid4 as str without `-` symbols.
-
-        8e7c653b-7faf-47fe-b6d3-e87c277e138a -> 8e7c653b7faf47feb6d3e87c277e138a
-
-        get_default_uuid4 -> format_to_str_uuid
-        """
-        return do(
-            Ok(str_uuid)
-            for default_uuid in self.get_default_uuid4()
-            for str_uuid in self.format_to_str_uuid(default_uuid)
+    def get_telegram_msg(
+        self: Self,
+        chat_id: str,
+        data: str,
+    ) -> Result[dict[str, bool | str], Exception]:
+        """Get msg for telegram in dict."""
+        return Ok(
+            {
+                "chat_id": chat_id,
+                "parse_mode": "HTML",
+                "disable_notification": True,
+                "text": data,
+            },
         )
 
-    def convert_bytes_to_base64(self: Self, data: bytes) -> Result[bytes, Exception]:
-        """Convert bytes to base64."""
-        try:
-            return Ok(b64encode(data))
-        except TypeError as exc:
-            logger.exception(exc)
-            return Err(exc)
+    def get_chat_ids_for_telegram(self: Self) -> Result[list[str], Exception]:
+        """Get list chat id for current send."""
+        return Ok(self.TELEGRAM_BOT_CHAT_ID)
 
-    def encode(self: Self, data: str) -> Result[bytes, Exception]:
-        """Return Ok(bytes) from str data."""
-        try:
-            return Ok(data.encode())
-        except AttributeError as exc:
-            logger.exception(exc)
-            return Err(exc)
-
-    def decode(self: Self, data: bytes) -> Result[str, Exception]:
-        """Return Ok(str) from bytes data."""
-        try:
-            return Ok(data.decode())
-        except AttributeError as exc:
-            logger.exception(exc)
-            return Err(exc)
-
-    def get_default_hmac(
+    async def send_msg_to_each_chat_id(
         self: Self,
-        secret: bytes,
-        data: bytes,
-    ) -> Result[HMAC, Exception]:
-        """Get default HMAC."""
-        return Ok(hmac_new(secret, data, sha256))
+        chat_ids: list[str],
+        data: str,
+    ) -> Result[None, Exception]:
+        """."""
+        method = "POST"
+        for chat in chat_ids:
+            await do_async(
+                Ok(None)
+                for telegram_url in self.get_telegram_url()
+                for msg in self.get_telegram_msg(chat, data)
+                for msg_bytes in self.dumps_dict_to_bytes(msg)
+                for response_bytes in await self.request(
+                    url=telegram_url,
+                    method=method,
+                    headers={},
+                    data=msg_bytes,
+                )
+                for response_dict in self.parse_bytes_to_dict(response_bytes)
+                for _ in self.logger_info(response_dict)
+            )
+        return Ok(None)
 
-    def convert_hmac_to_digest(
-        self: Self,
-        hmac_object: HMAC,
-    ) -> Result[bytes, Exception]:
-        """Convert HMAC to digest."""
-        return Ok(hmac_object.digest())
-
-    def encrypt_data(self: Self, secret: bytes, data: bytes) -> Result[str, Exception]:
-        """Encript `data` to hmac."""
-        return do(
-            Ok(result)
-            for hmac_object in self.get_default_hmac(secret, data)
-            for hmac_data in self.convert_hmac_to_digest(hmac_object)
-            for base64_data in self.convert_bytes_to_base64(hmac_data)
-            for result in self.decode(base64_data)
+    async def send_telegram_msg(self: Self, data: str) -> Result[str, Exception]:
+        """Send msg to telegram."""
+        return await do_async(
+            Ok("checked_dict")
+            for chat_ids in self.get_chat_ids_for_telegram()
+            for _ in await self.send_msg_to_each_chat_id(chat_ids, data)
         )
-
-    def dumps_dict_to_bytes(
-        self: Self,
-        data: dict[str, Any],
-    ) -> Result[bytes, Exception]:
-        """Dumps dict to bytes[json].
-
-        {"qaz":"edc"} -> b'{"qaz":"wsx"}'
-        """
-        try:
-            return Ok(dumps(data))
-        except JSONEncodeError as exc:
-            logger.exception(exc)
-            return Err(exc)
-
-    def parse_bytes_to_dict(
-        self: Self,
-        data: bytes | str,
-    ) -> Result[dict[str, Any], Exception]:
-        """Parse bytes[json] to dict.
-
-        b'{"qaz":"wsx"}' -> {"qaz":"wsx"}
-        """
-        try:
-            return Ok(loads(data))
-        except JSONDecodeError as exc:
-            logger.exception(exc)
-            return Err(exc)
-
-
-class Request(Encrypt):
-    """All methods for http actions."""
 
     def get_env(self: Self, key: str) -> Result[str, ValueError]:
         """Just get key from EVN."""
@@ -180,24 +124,6 @@ class Request(Encrypt):
             for value_by_key in self.get_env(key)
             for value_in_list in self._env_convert_to_list(value_by_key)
         )
-
-    def __init__(self: Self) -> None:
-        """Init settings."""
-        # All about excange
-        self.KEY = self.get_env("KEY").unwrap()
-        self.SECRET = self.get_env("SECRET").unwrap()
-        self.PASSPHRASE = self.get_env("PASSPHRASE").unwrap()
-        self.BASE_URL = self.get_env("BASE_URL").unwrap()
-
-        # all about tokens
-        self.ALL_CURRENCY = self.get_list_env("ALLCURRENCY").unwrap()
-        self.BASE_KEEP = Decimal(self.get_env("BASE_KEEP").unwrap())
-
-        # All about tlg
-        self.TELEGRAM_BOT_API_KEY = self.get_env("TELEGRAM_BOT_API_KEY").unwrap()
-        self.TELEGRAM_BOT_CHAT_ID = self.get_list_env("TELEGRAM_BOT_CHAT_ID").unwrap()
-
-        logger.success("Settings are OK!")
 
     async def post_api_v1_margin_order(
         self: Self,
@@ -557,10 +483,6 @@ class Request(Encrypt):
             logger.exception(exc)
             return Err(exc)
 
-
-class WebSocket(Encrypt):
-    """Class for working with websockets."""
-
     def get_websocket(self: Self, url: str) -> Result[connect, Exception]:
         """Get connect for working with websocket by url."""
         return Ok(
@@ -642,20 +564,6 @@ class WebSocket(Encrypt):
             for _ in self.check_ack_websocket(subsribe_msg, ack_subscribe_dict)
         )
 
-    async def listen_balance_msg(
-        self: Self,
-        ws_inst: ClientConnection,
-    ) -> Result[None, Exception]:
-        """Listen balance msgs."""
-        raise NotImplementedError
-
-    async def listen_matching_msg(
-        self: Self,
-        ws_inst: ClientConnection,
-    ) -> Result[None, Exception]:
-        """Listen matching msgs."""
-        raise NotImplementedError
-
     async def runtime_balance_ws(
         self: Self,
         ws: connect,
@@ -723,13 +631,128 @@ class WebSocket(Encrypt):
             logger.exception(exc)
             return Err(exc)
 
+    def logger_info[T](self: Self, data: T) -> Result[T, Exception]:
+        """Info logger for Pipes."""
+        logger.info(data)
+        return Ok(data)
 
-class KCN(Request, WebSocket):
-    """Main class collect all logic."""
+    def logger_exception[T](self: Self, data: T) -> Result[T, Exception]:
+        """Exception logger for Pipes."""
+        logger.exception(data)
+        return Ok(data)
 
-    def __init__(self) -> None:
-        """Init parents."""
-        super().__init__()
+    def logger_success[T](self: Self, data: T) -> Result[T, Exception]:
+        """Success logger for Pipes."""
+        logger.success(data)
+        return Ok(data)
+
+    def cancatinate_str(self: Self, *args: str) -> Result[str, Exception]:
+        """Cancatinate to str."""
+        try:
+            return Ok("".join(args))
+        except TypeError as exc:
+            logger.exception(exc)
+            return Err(exc)
+
+    def get_default_uuid4(self: Self) -> Result[UUID, Exception]:
+        """Get default uuid4."""
+        return Ok(uuid4())
+
+    def format_to_str_uuid(self: Self, data: UUID) -> Result[str, Exception]:
+        """Get str UUID4 and replace `-` symbol to spaces."""
+        return do(
+            Ok(result) for result in self.cancatinate_str(str(data).replace("-", ""))
+        )
+
+    def get_uuid4(self: Self) -> Result[str, Exception]:
+        """Get uuid4 as str without `-` symbols.
+
+        8e7c653b-7faf-47fe-b6d3-e87c277e138a -> 8e7c653b7faf47feb6d3e87c277e138a
+
+        get_default_uuid4 -> format_to_str_uuid
+        """
+        return do(
+            Ok(str_uuid)
+            for default_uuid in self.get_default_uuid4()
+            for str_uuid in self.format_to_str_uuid(default_uuid)
+        )
+
+    def convert_bytes_to_base64(self: Self, data: bytes) -> Result[bytes, Exception]:
+        """Convert bytes to base64."""
+        try:
+            return Ok(b64encode(data))
+        except TypeError as exc:
+            logger.exception(exc)
+            return Err(exc)
+
+    def encode(self: Self, data: str) -> Result[bytes, Exception]:
+        """Return Ok(bytes) from str data."""
+        try:
+            return Ok(data.encode())
+        except AttributeError as exc:
+            logger.exception(exc)
+            return Err(exc)
+
+    def decode(self: Self, data: bytes) -> Result[str, Exception]:
+        """Return Ok(str) from bytes data."""
+        try:
+            return Ok(data.decode())
+        except AttributeError as exc:
+            logger.exception(exc)
+            return Err(exc)
+
+    def get_default_hmac(
+        self: Self,
+        secret: bytes,
+        data: bytes,
+    ) -> Result[HMAC, Exception]:
+        """Get default HMAC."""
+        return Ok(hmac_new(secret, data, sha256))
+
+    def convert_hmac_to_digest(
+        self: Self,
+        hmac_object: HMAC,
+    ) -> Result[bytes, Exception]:
+        """Convert HMAC to digest."""
+        return Ok(hmac_object.digest())
+
+    def encrypt_data(self: Self, secret: bytes, data: bytes) -> Result[str, Exception]:
+        """Encript `data` to hmac."""
+        return do(
+            Ok(result)
+            for hmac_object in self.get_default_hmac(secret, data)
+            for hmac_data in self.convert_hmac_to_digest(hmac_object)
+            for base64_data in self.convert_bytes_to_base64(hmac_data)
+            for result in self.decode(base64_data)
+        )
+
+    def dumps_dict_to_bytes(
+        self: Self,
+        data: dict[str, Any],
+    ) -> Result[bytes, Exception]:
+        """Dumps dict to bytes[json].
+
+        {"qaz":"edc"} -> b'{"qaz":"wsx"}'
+        """
+        try:
+            return Ok(dumps(data))
+        except JSONEncodeError as exc:
+            logger.exception(exc)
+            return Err(exc)
+
+    def parse_bytes_to_dict(
+        self: Self,
+        data: bytes | str,
+    ) -> Result[dict[str, Any], Exception]:
+        """Parse bytes[json] to dict.
+
+        b'{"qaz":"wsx"}' -> {"qaz":"wsx"}
+        """
+        try:
+            return Ok(loads(data))
+        except JSONDecodeError as exc:
+            logger.exception(exc)
+            return Err(exc)
 
     def create_book(self: Self) -> Result[None, Exception]:
         """Build own structure.
@@ -1017,6 +1040,7 @@ async def main() -> Result[None, Exception]:
     match await kcn.pre_init():
         case Ok(kcn):
             kcn.logger_success("Pre-init OK!")
+            await kcn.send_telegram_msg("Settings are OK!")
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(kcn.balancer())
                 tg.create_task(kcn.matching())
