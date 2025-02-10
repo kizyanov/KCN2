@@ -826,6 +826,22 @@ class KCN:
                 for _ in self.event_fill_balance(value)
             )
 
+    async def event_matching(
+        self: Self,
+        data: dict[str, dict[str, str]],
+    ) -> Result[None, Exception]:
+        """Event matching order."""
+        if (
+            "data" in data
+            and "type" in data["data"]
+            and data["data"]["type"] == "filled"
+        ):
+            self.logger_success(f"Order filled:{data}")
+            # send telegram msg
+            # cancel other order
+            # make new orders on sell and buy
+        return Ok(None)
+
     async def listen_matching_msg(
         self: Self,
         ws_inst: ClientConnection,
