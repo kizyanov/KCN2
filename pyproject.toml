@@ -12,6 +12,7 @@ orjson = "^3.10.15"
 aiohttp = { extras = ["speedups"], version = "^3.11.12" }
 loguru = "^0.7.3"
 websockets = "^14.2"
+dacite = "^1.9.2"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -23,7 +24,7 @@ pytest-cov = "^6.0.0"
 
 [tool.ruff]
 lint.select = ["ALL"]
-lint.ignore = []
+lint.ignore = ["N815"]
 lint.fixable = ["I", "COM"]
 lint.mccabe.max-complexity = 3
 lint.pydocstyle.convention = "google"

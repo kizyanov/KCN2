@@ -2,7 +2,8 @@
 
 import asyncio
 from base64 import b64encode
-from decimal import Decimal
+from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from hmac import HMAC
 from hmac import new as hmac_new
@@ -13,11 +14,207 @@ from urllib.parse import urljoin
 from uuid import UUID, uuid4
 
 from aiohttp import ClientConnectorError, ClientSession
+from dacite import (
+    ForwardReferenceError,
+    MissingValueError,
+    StrictUnionMatchError,
+    UnexpectedDataError,
+    UnionMatchError,
+    WrongTypeError,
+    from_dict,
+)
 from loguru import logger
 from orjson import JSONDecodeError, JSONEncodeError, dumps, loads
 from result import Err, Ok, Result, do, do_async
 from websockets import ClientConnection, connect
 from websockets import exceptions as websockets_exceptions
+
+
+@dataclass(frozen=True)
+class TelegramSendMsg:
+    """."""
+
+    @dataclass
+    class Res:
+        """."""
+
+        ok: bool = field(default=False)
+
+
+@dataclass(frozen=True)
+class ApiV1MarginOrderPOST:
+    """."""
+
+    @dataclass
+    class Res:
+        """."""
+
+        code: str = field(default="")
+        orderId: str = field(default="")
+
+
+@dataclass(frozen=True)
+class ApiV2SymbolsGET:
+    """."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """."""
+
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            baseCurrency: str = field(default="")
+            quoteCurrency: str = field(default="")
+            baseIncrement: str = field(default="")
+
+        data: list[Data] = field(default_factory=list[Data])
+        code: str = field(default="")
+
+
+@dataclass
+class ApiV1OrdersDELETE:
+    """."""
+
+    @dataclass
+    class Res:
+        """."""
+
+        code: str = field(default="")
+
+
+@dataclass(frozen=True)
+class ApiV1OrdersGET:
+    """."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """."""
+
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            @dataclass
+            class Item:
+                """."""
+
+                id: str = field(default="")
+
+            items: list[Item] = field(default_factory=list[Item])
+
+        data: Data = field(default_factory=Data)
+        code: str = field(default="")
+
+
+@dataclass(frozen=True)
+class ApiV3MarginAccountsGET:
+    """."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """."""
+
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            @dataclass(frozen=True)
+            class Account:
+                """."""
+
+                currency: str = field(default="")
+                liability: str = field(default="")
+                available: str = field(default="")
+
+            accounts: list[Account] = field(default_factory=list[Account])
+
+        data: Data = field(default_factory=Data)
+        code: str = field(default="")
+
+
+@dataclass(frozen=True)
+class OrderChangeV2:
+    """."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """."""
+
+        @dataclass
+        class Data:
+            """."""
+
+            type: str = field(default="")
+            symbol: str = field(default="")
+            side: str = field(default="")
+            size: str = field(default="")
+            price: str = field(default="")
+
+        data: Data = field(default_factory=Data)
+
+
+@dataclass(frozen=True)
+class AccountBalanceChange:
+    """."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """."""
+
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            currency: str = field(default="")
+            total: str = field(default="")
+
+        data: Data = field(default_factory=Data)
+
+
+@dataclass(frozen=True)
+class ApiV1BulletPrivatePOST:
+    """."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """."""
+
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            @dataclass(frozen=True)
+            class Instance:
+                """."""
+
+                endpoint: str = field(default="")
+
+            instanceServers: list[Instance] = field(default_factory=list[Instance])
+            token: str = field(default="")
+
+        data: Data = field(default_factory=Data)
+        code: str = field(default="")
+
+
+@dataclass(frozen=True)
+class ApiV1AccountsGET:
+    """."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """."""
+
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            currency: str = field(default="")
+            balance: str = field(default="")
+
+        data: list[Data] = field(default_factory=list[Data])
+        code: str = field(default="")
 
 
 class KCN:
@@ -40,6 +237,29 @@ class KCN:
         self.TELEGRAM_BOT_CHAT_ID = self.get_list_env("TELEGRAM_BOT_CHAT_ID").unwrap()
 
         logger.success("Settings are OK!")
+
+    def convert_to_dataclass_from_dict[T](
+        self: Self,
+        data_class: type[T],
+        data: dict[str, Any],
+    ) -> Result[T, Exception]:
+        """Convert dict to dataclass."""
+        try:
+            return Ok(
+                from_dict(
+                    data_class=data_class,
+                    data=data,
+                ),
+            )
+        except (
+            WrongTypeError,
+            MissingValueError,
+            UnionMatchError,
+            StrictUnionMatchError,
+            UnexpectedDataError,
+            ForwardReferenceError,
+        ) as exc:
+            return Err(exc)
 
     def get_telegram_url(self: Self) -> Result[str, Exception]:
         """Get url for send telegram msg."""
@@ -68,10 +288,10 @@ class KCN:
 
     def check_telegram_response(
         self: Self,
-        data: dict[str, str | bool],
+        data: TelegramSendMsg.Res,
     ) -> Result[None, Exception]:
         """Check telegram response on msg."""
-        if data["ok"]:
+        if data.ok:
             return Ok(None)
         return Err(Exception(f"{data}"))
 
@@ -79,12 +299,12 @@ class KCN:
         self: Self,
         chat_ids: list[str],
         data: str,
-    ) -> Result[None, Exception]:
+    ) -> Result[TelegramSendMsg.Res, Exception]:
         """Send msg for each chat id."""
         method = "POST"
         for chat in chat_ids:
             await do_async(
-                Ok(None)
+                Ok(result)
                 for telegram_url in self.get_telegram_url()
                 for msg in self.get_telegram_msg(chat, data)
                 for msg_bytes in self.dumps_dict_to_bytes(msg)
@@ -97,10 +317,13 @@ class KCN:
                     data=msg_bytes,
                 )
                 for response_dict in self.parse_bytes_to_dict(response_bytes)
-                for _ in self.logger_info(response_dict)
-                for _ in self.check_telegram_response(response_dict)
+                for data_dataclass in self.convert_to_dataclass_from_dict(
+                    TelegramSendMsg.Res,
+                    response_dict,
+                )
+                for result in self.check_telegram_response(data_dataclass)
             )
-        return Ok(None)
+        return Ok(TelegramSendMsg.Res())
 
     async def send_telegram_msg(self: Self, data: str) -> Result[str, Exception]:
         """Send msg to telegram."""
@@ -140,7 +363,7 @@ class KCN:
     async def post_api_v1_margin_order(
         self: Self,
         data: dict[str, str],
-    ) -> Result[dict[str, Any], Exception]:
+    ) -> Result[ApiV1MarginOrderPOST.Res, Exception]:
         """Make margin order.
 
         https://www.kucoin.com/docs/rest/margin-trading/orders/place-margin-order
@@ -161,7 +384,7 @@ class KCN:
         uri = "/api/v1/margin/order"
         method = "POST"
         return await do_async(
-            Ok(checked_dict)
+            Ok(result)
             for full_url in self.get_full_url(self.BASE_URL, uri)
             for dumps_data_bytes in self.dumps_dict_to_bytes(data)
             for dumps_data_str in self.decode(dumps_data_bytes)
@@ -183,13 +406,18 @@ class KCN:
                 data=dumps_data_bytes,
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
-            for checked_dict in self.check_response_code(response_dict)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                ApiV1MarginOrderPOST.Res,
+                response_dict,
+            )
+            for _ in self.logger_success(data_dataclass)
+            for result in self.check_response_code(data_dataclass)
         )
 
     async def get_api_v1_accounts(
         self: Self,
         params: dict[str, str],
-    ) -> Result[dict[str, Any], Exception]:
+    ) -> Result[ApiV1AccountsGET.Res, Exception]:
         """Get account list with balance.
 
         https://www.kucoin.com/docs/rest/account/basic-info/get-account-list-spot-margin-trade_hf
@@ -213,18 +441,22 @@ class KCN:
                 headers=headers,
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
-            for checked_dict in self.check_response_code(response_dict)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                ApiV1AccountsGET.Res,
+                response_dict,
+            )
+            for checked_dict in self.check_response_code(data_dataclass)
         )
 
     async def get_api_v1_orders(
         self: Self,
         params: dict[str, str],
-    ) -> Result[dict[str, Any], Exception]:
+    ) -> Result[ApiV1OrdersGET.Res, Exception]:
         """Get all orders by params."""
         uri = "/api/v1/orders"
         method = "GET"
         return await do_async(
-            Ok(checked_dict)
+            Ok(result)
             for params_in_url in self.get_url_params_as_str(params)
             for uri_params in self.cancatinate_str(uri, params_in_url)
             for full_url in self.get_full_url(self.BASE_URL, uri_params)
@@ -240,13 +472,17 @@ class KCN:
                 headers=headers,
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
-            for checked_dict in self.check_response_code(response_dict)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                ApiV1OrdersGET.Res,
+                response_dict,
+            )
+            for result in self.check_response_code(data_dataclass)
         )
 
     async def delete_api_v1_order(
         self: Self,
         order_id: str,
-    ) -> Result[dict[str, list[str]], Exception]:
+    ) -> Result[ApiV1OrdersDELETE.Res, Exception]:
         """Cancel order by `id`."""
         uri = f"/api/v1/orders/{order_id}"
         method = "DELETE"
@@ -265,12 +501,16 @@ class KCN:
                 headers=headers,
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
-            for checked_dict in self.check_response_code(response_dict)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                ApiV1OrdersDELETE.Res,
+                response_dict,
+            )
+            for checked_dict in self.check_response_code(data_dataclass)
         )
 
     async def get_api_v2_symbols(
         self: Self,
-    ) -> Result[dict[str, Any], Exception]:
+    ) -> Result[ApiV2SymbolsGET.Res, Exception]:
         """Get symbol list.
 
         https://www.kucoin.com/docs/rest/spot-trading/market-data/get-symbols-list
@@ -278,7 +518,7 @@ class KCN:
         uri = "/api/v2/symbols"
         method = "GET"
         return await do_async(
-            Ok(checked_dict)
+            Ok(result)
             for headers in self.get_headers_not_auth()
             for full_url in self.get_full_url(self.BASE_URL, uri)
             for response_bytes in await self.request(
@@ -287,18 +527,22 @@ class KCN:
                 headers=headers,
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
-            for checked_dict in self.check_response_code(response_dict)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                ApiV2SymbolsGET.Res,
+                response_dict,
+            )
+            for result in self.check_response_code(data_dataclass)
         )
 
     async def get_api_v3_margin_accounts(
         self: Self,
         params: dict[str, str],
-    ) -> Result[dict[str, dict[str, str]], Exception]:
+    ) -> Result[ApiV3MarginAccountsGET.Res, Exception]:
         """Get margin account user data."""
         uri = "/api/v3/margin/accounts"
         method = "GET"
         return await do_async(
-            Ok(checked_dict)
+            Ok(result)
             for params_in_url in self.get_url_params_as_str(params)
             for uri_params in self.cancatinate_str(uri, params_in_url)
             for full_url in self.get_full_url(self.BASE_URL, uri_params)
@@ -314,12 +558,16 @@ class KCN:
                 headers=headers,
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
-            for checked_dict in self.check_response_code(response_dict)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                ApiV3MarginAccountsGET.Res,
+                response_dict,
+            )
+            for result in self.check_response_code(data_dataclass)
         )
 
     async def get_api_v1_bullet_private(
         self: Self,
-    ) -> Result[dict[str, str], Exception]:
+    ) -> Result[ApiV1BulletPrivatePOST.Res, Exception]:
         """Get tokens for private channel.
 
         https://www.kucoin.com/docs/websocket/basic-info/apply-connect-token/private-channels-authentication-request-required-
@@ -327,7 +575,7 @@ class KCN:
         uri = "/api/v1/bullet-private"
         method = "POST"
         return await do_async(
-            Ok(checked_dict)
+            Ok(result)
             for full_url in self.get_full_url(self.BASE_URL, uri)
             for now_time in self.get_now_time()
             for data_to_sign in self.cancatinate_str(now_time, method, uri)
@@ -341,12 +589,16 @@ class KCN:
                 headers=headers,
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
-            for checked_dict in self.check_response_code(response_dict)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                ApiV1BulletPrivatePOST.Res,
+                response_dict,
+            )
+            for result in self.check_response_code(data_dataclass)
         )
 
     def get_url_for_websocket(
         self: Self,
-        data: dict[str, str],
+        data: ApiV1BulletPrivatePOST.Res,
     ) -> Result[str, Exception]:
         """Get complete url for websocket.
 
@@ -366,23 +618,33 @@ class KCN:
             )
         )
 
+    def get_first_item_from_list[T](self: Self, data: list[T]) -> Result[T, Exception]:
+        """Get first item from list."""
+        try:
+            return Ok(data[0])
+        except (TypeError, IndexError) as exc:
+            return Err(exc)
+
     def export_url_from_api_v1_bullet(
         self: Self,
-        data: dict[str, Any],
+        data: ApiV1BulletPrivatePOST.Res,
     ) -> Result[str, Exception]:
         """Get endpoint for public websocket."""
         try:
-            return Ok(data["data"]["instanceServers"][0]["endpoint"])
+            return do(
+                Ok(instance.endpoint)
+                for instance in self.get_first_item_from_list(data.data.instanceServers)
+            )
         except (KeyError, TypeError) as exc:
             return Err(Exception(f"Miss keys instanceServers in {exc} by {data}"))
 
     def export_token_from_api_v1_bullet(
         self: Self,
-        data: dict[str, Any],
+        data: ApiV1BulletPrivatePOST.Res,
     ) -> Result[str, Exception]:
         """Get token for public websocket."""
         try:
-            return Ok(data["data"]["token"])
+            return Ok(data.data.token)
         except (KeyError, TypeError) as exc:
             return Err(Exception(f"Miss keys token in {exc} by {data}"))
 
@@ -457,15 +719,15 @@ class KCN:
             for time_now_in_int in self.convert_to_int(time_now)
         )
 
-    def check_response_code(
+    def check_response_code[T](
         self: Self,
-        data: dict[str, Any],
-    ) -> Result[dict[str, Any], Exception]:
+        data: T,
+    ) -> Result[T, Exception]:
         """Check if key `code`.
 
         If key `code` in dict == '200000' then success
         """
-        if isinstance(data, dict) and "code" in data and data["code"] == "200000":
+        if hasattr(data, "code") and data.code == "200000":
             return Ok(data)
         return Err(Exception(data))
 
@@ -803,14 +1065,20 @@ class KCN:
         }
         return Ok(None)
 
+    def to_decimal(self: Self, data: float | str) -> Result[Decimal, Exception]:
+        """Convert to Decimal format."""
+        try:
+            return Ok(Decimal(data))
+        except (TypeError, InvalidOperation) as exc:
+            return Err(exc)
+
     def event_fill_balance(
         self: Self,
-        data: dict[str, dict[str, str]],
+        data: AccountBalanceChange.Res,
     ) -> Result[None, Exception]:
         """Fill balance from event balance websocket."""
-        token_symbol = data["data"]["currency"]
-        if token_symbol in self.book:
-            self.book[token_symbol]["balance"] = Decimal(data["data"]["total"])
+        if data.data.currency in self.book:
+            self.book[data.data.currency]["balance"] = Decimal(data.data.total)
         return Ok(None)
 
     async def listen_balance_msg(
@@ -823,7 +1091,11 @@ class KCN:
                 Ok(None)
                 for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
-                for _ in self.event_fill_balance(value)
+                for data_dataclass in self.convert_to_dataclass_from_dict(
+                    AccountBalanceChange.Res,
+                    value,
+                )
+                for _ in self.event_fill_balance(data_dataclass)
             )
 
     async def event_matching(
@@ -852,16 +1124,20 @@ class KCN:
                 Ok(None)
                 for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
-                for _ in self.logger_info(value)
+                for data_dataclass in self.convert_to_dataclass_from_dict(
+                    OrderChangeV2.Res,
+                    value,
+                )
+                for _ in self.logger_info(data_dataclass)
             )
 
     def export_account_usdt_from_api_v3_margin_accounts(
         self: Self,
-        data: dict[str, Any],
-    ) -> Result[dict[str, Any], Exception]:
+        data: ApiV3MarginAccountsGET.Res,
+    ) -> Result[ApiV3MarginAccountsGET.Res.Data.Account, Exception]:
         """Get USDT available from margin account."""
         try:
-            for i in [i for i in data["data"]["accounts"] if i["currency"] == "USDT"]:
+            for i in [i for i in data.data.accounts if i.currency == "USDT"]:
                 return Ok(i)
             return Err(Exception("Not found USDT in accounts data"))
         except (AttributeError, KeyError) as exc:
@@ -870,17 +1146,17 @@ class KCN:
 
     def export_liability_usdt(
         self: Self,
-        data: dict[str, str],
+        data: ApiV3MarginAccountsGET.Res.Data.Account,
     ) -> Result[Decimal, Exception]:
         """Export liability and available USDT from api_v3_margin_accounts."""
-        return Ok(Decimal(data["liability"]))
+        return do(Ok(result) for result in self.to_decimal(data.liability))
 
     def export_available_usdt(
         self: Self,
-        data: dict[str, str],
+        data: ApiV3MarginAccountsGET.Res.Data.Account,
     ) -> Result[Decimal, Exception]:
         """Export liability and available USDT from api_v3_margin_accounts."""
-        return Ok(Decimal(data["available"]))
+        return do(Ok(result) for result in self.to_decimal(data.available))
 
     async def alertest(self: Self) -> Result[None, Exception]:
         """Alert statistic."""
@@ -912,10 +1188,10 @@ class KCN:
 
     def export_order_id_from_orders_list(
         self: Self,
-        orders: dict[str, Any],
+        orders: ApiV1OrdersGET.Res,
     ) -> Result[list[str], Exception]:
         """Export id from orders list."""
-        return Ok([order["id"] for order in orders["data"]["items"]])
+        return Ok([order.id for order in orders.data.items])
 
     def get_msg_for_subscribe_balance(
         self: Self,
@@ -991,11 +1267,14 @@ class KCN:
             )
         )
 
-    def _fill_balance(self: Self, data: dict[str, Any]) -> Result[None, Exception]:
+    def _fill_balance(
+        self: Self,
+        data: ApiV1AccountsGET.Res,
+    ) -> Result[None, Exception]:
         """Export current balance from data."""
-        for ticket in data["data"]:
-            if ticket["currency"] in self.book:
-                self.book[ticket["currency"]]["balance"] = Decimal(ticket["balance"])
+        for ticket in data.data:
+            if ticket.currency in self.book:
+                self.book[ticket.currency]["balance"] = Decimal(ticket.balance)
         return Ok(None)
 
     async def fill_balance(self: Self) -> Result[None, Exception]:
@@ -1011,17 +1290,16 @@ class KCN:
     # nu cho jopki kak dila
     def _fill_base_increment(
         self: Self,
-        data: dict[str, Any],
+        data: ApiV2SymbolsGET.Res,
     ) -> Result[None, Exception]:
         """Fill base increment by each token."""
-        for out_side_ticket in data["data"]:
-            base_currency = out_side_ticket["baseCurrency"]
+        for out_side_ticket in data.data:
             if (
-                base_currency in self.book
-                and out_side_ticket["quoteCurrency"] == "USDT"
+                out_side_ticket.baseCurrency in self.book
+                and out_side_ticket.quoteCurrency == "USDT"
             ):
-                self.book[base_currency]["increment"] = Decimal(
-                    out_side_ticket["baseIncrement"],
+                self.book[out_side_ticket.baseCurrency]["increment"] = Decimal(
+                    out_side_ticket.baseIncrement,
                 )
         return Ok(None)
 
@@ -1058,6 +1336,19 @@ class KCN:
             for _ in await self.fill_base_increment()
         )
 
+    async def infinity_task(self: Self) -> Result[None, Exception]:
+        """."""
+        async with asyncio.TaskGroup() as tg:
+            tasks = [
+                tg.create_task(self.balancer()),
+                tg.create_task(self.matching()),
+            ]
+
+        for task in tasks:
+            return task.result()
+
+        return Ok(None)
+
 
 # meow anton - baka des ^^
 
@@ -1065,18 +1356,13 @@ class KCN:
 async def main() -> Result[None, Exception]:
     """Collect of major func."""
     kcn = KCN()
-    match await kcn.pre_init():
-        case Ok(kcn):
-            kcn.logger_success("Pre-init OK!")
-            await kcn.send_telegram_msg("Settings are OK!")
-            async with asyncio.TaskGroup() as tg:
-                tg.create_task(kcn.balancer())
-                tg.create_task(kcn.matching())
-        case Err(exc):
-            kcn.logger_exception(exc)
-            return Err(exc)
-
-    return Ok(None)
+    return await do_async(
+        Ok(None)
+        for _ in await kcn.pre_init()
+        for _ in kcn.logger_success("Pre-init OK!")
+        for _ in await kcn.send_telegram_msg("Settings are OK!")
+        for _ in await kcn.infinity_task()
+    )
 
 
 if __name__ == "__main__":
