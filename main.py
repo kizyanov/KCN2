@@ -1223,6 +1223,7 @@ class KCN:
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
         """."""
+        # need update price
         match await do_async(
             Ok(None)
             for _ in await self.send_telegram_msg(
