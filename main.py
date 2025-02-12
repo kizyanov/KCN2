@@ -1554,13 +1554,19 @@ class KCN:
 async def main() -> Result[None, Exception]:
     """Collect of major func."""
     kcn = KCN()
-    return await do_async(
+    match await do_async(
         Ok(None)
         for _ in await kcn.pre_init()
         for _ in kcn.logger_success("Pre-init OK!")
         for _ in await kcn.send_telegram_msg("Settings are OK!")
         for _ in await kcn.infinity_task()
-    )
+    ):
+        case Ok(None):
+            pass
+        case Err(exc):
+            logger.exception(exc)
+            raise exc
+    return Ok(None)
 
 
 if __name__ == "__main__":
