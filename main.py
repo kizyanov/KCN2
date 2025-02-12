@@ -1198,20 +1198,61 @@ class KCN:
                 for _ in self.event_fill_balance(data_dataclass)
             )
 
+    def replace_symbol_name(self: Self, data: str) -> Result[str, Exception]:
+        """Replace BTC-USDT to BTC."""
+        return Ok(data.replace("-USDT", ""))
+
+    def find_order_for_cancel(
+        self: Self,
+        symbol: str,
+        side: str,
+    ) -> Result[str, Exception]:
+        """."""
+        match side:
+            case "sell":
+                order_id = ""
+            case "buy":
+                order_id = ""
+            case _:
+                return Err(Exception("Empty side in matching"))
+
+        return Ok(self.book_orders[symbol][order_id])
+
+    async def event_matching_filled(
+        self: Self,
+        data: OrderChangeV2.Res.Data,
+    ) -> Result[None, Exception]:
+        """."""
+        match await do_async(
+            Ok(None)
+            for _ in await self.send_telegram_msg(
+                f"side:{data.side}, symbol:{data.symbol} price:{data.price}",
+            )
+            for replaced_name in self.replace_symbol_name(data.symbol)
+            for get_open_order_for_cancel in self.find_order_for_cancel(
+                replaced_name,
+                data.side,
+            )
+            for _ in await self.delete_api_v1_order(get_open_order_for_cancel)
+            for _ in await self.make_twice_margin_order(
+                replaced_name,
+                self.book[replaced_name],
+            )
+        ):
+            case Ok(None):
+                pass
+            case Err(exc):
+                logger.exception(exc)
+        return Ok(None)
+
     async def event_matching(
         self: Self,
-        data: dict[str, dict[str, str]],
+        data: OrderChangeV2.Res,
     ) -> Result[None, Exception]:
         """Event matching order."""
-        if (
-            "data" in data
-            and "type" in data["data"]
-            and data["data"]["type"] == "filled"
-        ):
-            self.logger_success(f"Order filled:{data}")
-            # send telegram msg
-            # cancel other order
-            # make new orders on sell and buy
+        match data.data.type:
+            case "filled":
+                await self.event_matching_filled(data.data)
         return Ok(None)
 
     async def listen_matching_msg(
@@ -1228,7 +1269,7 @@ class KCN:
                     OrderChangeV2.Res,
                     value,
                 )
-                for _ in self.logger_info(data_dataclass)
+                for _ in await self.event_matching(data_dataclass)
             )
 
     def export_account_usdt_from_api_v3_margin_accounts(
