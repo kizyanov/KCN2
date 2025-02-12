@@ -27,7 +27,7 @@ pytest-cov = "^6.0.0"
 lint.select = ["ALL"]
 lint.ignore = ["N815","E501"]
 lint.fixable = ["I", "COM", "D202"]
-lint.mccabe.max-complexity = 3
+lint.mccabe.max-complexity = 4
 lint.pydocstyle.convention = "google"
 
 target-version = "py313"

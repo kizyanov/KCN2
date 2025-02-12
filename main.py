@@ -1388,7 +1388,7 @@ class KCN:
         await asyncio.sleep(10)
 
         for ticket, params in self.book.items():
-            await do_async(
+            match await do_async(
                 Ok(None)
                 # for up
                 for order_up in self.calc_up(
@@ -1418,7 +1418,12 @@ class KCN:
                 )
                 for order_id in await self.post_api_v1_margin_order(params_order_down)
                 for _ in self.logger_success(order_id)
-            )
+            ):
+                case Ok(None):
+                    pass
+                case Err(exc):
+                    logger.exception(exc)
+                    continue
             self.logger_info(f"{ticket=} {params=}")
 
         return Ok(None)
