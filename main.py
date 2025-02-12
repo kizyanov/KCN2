@@ -1403,7 +1403,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Fill last price for each token."""
         for ticket in data.data.ticker:
-            symbol = f"{ticket.symbol}-USDT"
+            symbol = ticket.symbol.replace("-USDT", "")
             if symbol in self.book and isinstance(ticket.last, str):
                 self.book[symbol]["last"] = Decimal(ticket.last)
         return Ok(None)
