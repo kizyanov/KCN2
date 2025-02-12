@@ -396,7 +396,7 @@ class KCN:
 
     async def post_api_v1_margin_order(
         self: Self,
-        data: dict[str, str],
+        data: dict[str, str | bool],
     ) -> Result[ApiV1MarginOrderPOST.Res, Exception]:
         """Make margin order.
 
@@ -1343,26 +1343,81 @@ class KCN:
             )
         )
 
+    def complete_margin_order(
+        self: Self,
+        side: str,
+        symbol: str,
+        price: str,
+        size: str,
+    ) -> Result[dict[str, str | bool], Exception]:
+        """Complete data for margin order.
+
+        data =  {
+            "clientOid": str(uuid4()).replace("-", ""),
+            "side": side,
+            "symbol": symbol,
+            "price": price,
+            "size": size,
+            "type": "limit",
+            "timeInForce": "GTC",
+            "autoBorrow": True,
+            "autoRepay": True,
+        }
+        """
+        return do(
+            Ok(
+                {
+                    "clientOid": client_id,
+                    "side": side,
+                    "symbol": symbol,
+                    "price": price,
+                    "size": size,
+                    "type": "limit",
+                    "timeInForce": "GTC",
+                    "autoBorrow": True,
+                    "autoRepay": True,
+                },
+            )
+            for default_uuid4 in self.get_default_uuid4()
+            for client_id in self.format_to_str_uuid(default_uuid4)
+        )
+
     async def start_up_orders(self: Self) -> Result[None, Exception]:
         """."""
         # wait while matcher and balancer would be ready
         await asyncio.sleep(10)
 
         for ticket, params in self.book.items():
-            do(
+            await do_async(
                 Ok(None)
+                # for up
                 for order_up in self.calc_up(
                     params["balance"],
                     params["last"],
                     params["increment"],
                 )
-                for _ in self.logger_info(f"{order_up=}")
+                for params_order_up in self.complete_margin_order(
+                    side=order_up.side,
+                    symbol=f"{ticket}-USDT",
+                    price=order_up.price,
+                    size=order_up.size,
+                )
+                for order_id in await self.post_api_v1_margin_order(params_order_up)
+                for _ in self.logger_success(order_id)
+                # for down
                 for order_down in self.calc_down(
                     params["balance"],
                     params["last"],
                     params["increment"],
                 )
-                for _ in self.logger_info(f"{order_down=}")
+                for params_order_down in self.complete_margin_order(
+                    side=order_down.side,
+                    symbol=f"{ticket}-USDT",
+                    price=order_down.price,
+                    size=order_down.size,
+                )
+                for order_id in await self.post_api_v1_margin_order(params_order_down)
+                for _ in self.logger_success(order_id)
             )
             self.logger_info(f"{ticket=} {params=}")
 
