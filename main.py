@@ -420,6 +420,7 @@ class KCN:
         return await do_async(
             Ok(result)
             for full_url in self.get_full_url(self.BASE_URL, uri)
+            for _ in self.logger_info(data)
             for dumps_data_bytes in self.dumps_dict_to_bytes(data)
             for dumps_data_str in self.decode(dumps_data_bytes)
             for now_time in self.get_now_time()
@@ -1382,48 +1383,60 @@ class KCN:
             for client_id in self.format_to_str_uuid(default_uuid4)
         )
 
+    async def make_twice_margin_order(
+        self: Self,
+        ticket: str,
+        params: dict[str, Decimal],
+    ) -> Result[None, Exception]:
+        """."""
+        match await do_async(
+            Ok(None)
+            # for up
+            for order_up in self.calc_up(
+                params["balance"],
+                params["last"],
+                params["increment"],
+            )
+            for params_order_up in self.complete_margin_order(
+                side=order_up.side,
+                symbol=f"{ticket}-USDT",
+                price=order_up.price,
+                size=order_up.size,
+            )
+            for order_id in await self.post_api_v1_margin_order(params_order_up)
+            for _ in self.logger_success(order_id)
+            # for down
+            for order_down in self.calc_down(
+                params["balance"],
+                params["last"],
+                params["increment"],
+            )
+            for params_order_down in self.complete_margin_order(
+                side=order_down.side,
+                symbol=f"{ticket}-USDT",
+                price=order_down.price,
+                size=order_down.size,
+            )
+            for order_id in await self.post_api_v1_margin_order(params_order_down)
+            for _ in self.logger_success(order_id)
+        ):
+            case Ok(None):
+                pass
+            case Err(exc):
+                logger.exception(exc)
+        return Ok(None)
+
     async def start_up_orders(self: Self) -> Result[None, Exception]:
         """."""
         # wait while matcher and balancer would be ready
         await asyncio.sleep(10)
 
         for ticket, params in self.book.items():
-            match await do_async(
-                Ok(None)
-                # for up
-                for order_up in self.calc_up(
-                    params["balance"],
-                    params["last"],
-                    params["increment"],
-                )
-                for params_order_up in self.complete_margin_order(
-                    side=order_up.side,
-                    symbol=f"{ticket}-USDT",
-                    price=order_up.price,
-                    size=order_up.size,
-                )
-                for order_id in await self.post_api_v1_margin_order(params_order_up)
-                for _ in self.logger_success(order_id)
-                # for down
-                for order_down in self.calc_down(
-                    params["balance"],
-                    params["last"],
-                    params["increment"],
-                )
-                for params_order_down in self.complete_margin_order(
-                    side=order_down.side,
-                    symbol=f"{ticket}-USDT",
-                    price=order_down.price,
-                    size=order_down.size,
-                )
-                for order_id in await self.post_api_v1_margin_order(params_order_down)
-                for _ in self.logger_success(order_id)
-            ):
-                case Ok(None):
-                    pass
-                case Err(exc):
-                    logger.exception(exc)
-                    continue
+            await self.make_twice_margin_order(
+                ticket,
+                params,
+            )
+
             self.logger_info(f"{ticket=} {params=}")
 
         return Ok(None)
