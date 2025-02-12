@@ -3,7 +3,7 @@
 import asyncio
 from base64 import b64encode
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from hashlib import sha256
 from hmac import HMAC
 from hmac import new as hmac_new
@@ -28,6 +28,15 @@ from orjson import JSONDecodeError, JSONEncodeError, dumps, loads
 from result import Err, Ok, Result, do, do_async
 from websockets import ClientConnection, connect
 from websockets import exceptions as websockets_exceptions
+
+
+@dataclass(frozen=True)
+class OrderParam:
+    """."""
+
+    side: str = field(default="")
+    price: str = field(default="")
+    size: str = field(default="")
 
 
 @dataclass(frozen=True)
@@ -1119,7 +1128,11 @@ class KCN:
         }
         return Ok(None)
 
-    def to_decimal(self: Self, data: float | str) -> Result[Decimal, Exception]:
+    def decimal_to_str(self: Self, data: Decimal) -> Result[str, Exception]:
+        """Convert Decimal to str."""
+        return Ok(str(data))
+
+    def int_to_decimal(self: Self, data: float | str) -> Result[Decimal, Exception]:
         """Convert to Decimal format."""
         try:
             return Ok(Decimal(data))
@@ -1203,14 +1216,14 @@ class KCN:
         data: ApiV3MarginAccountsGET.Res.Data.Account,
     ) -> Result[Decimal, Exception]:
         """Export liability and available USDT from api_v3_margin_accounts."""
-        return do(Ok(result) for result in self.to_decimal(data.liability))
+        return do(Ok(result) for result in self.int_to_decimal(data.liability))
 
     def export_available_usdt(
         self: Self,
         data: ApiV3MarginAccountsGET.Res.Data.Account,
     ) -> Result[Decimal, Exception]:
         """Export liability and available USDT from api_v3_margin_accounts."""
-        return do(Ok(result) for result in self.to_decimal(data.available))
+        return do(Ok(result) for result in self.int_to_decimal(data.available))
 
     async def alertest(self: Self) -> Result[None, Exception]:
         """Alert statistic."""
@@ -1321,6 +1334,16 @@ class KCN:
             )
         )
 
+    async def start_up_orders(self: Self) -> Result[None, Exception]:
+        """."""
+        # wait while matcheer and balancer would be ready
+        await asyncio.sleep(10)
+
+        for ticket, params in self.book.items():
+            self.logger_info(f"{ticket=} {params=}")
+
+        return Ok(None)
+
     def _fill_balance(
         self: Self,
         data: ApiV1AccountsGET.Res,
@@ -1384,6 +1407,97 @@ class KCN:
             for _ in self._fill_last_price(market_ticket)
         )
 
+    def devide(
+        self: Self,
+        divider: Decimal,
+        divisor: Decimal,
+    ) -> Result[Decimal, Exception]:
+        """Devide."""
+        try:
+            return Ok(divider / divisor)
+        except ZeroDivisionError as exc:
+            return Err(exc)
+
+    def calc_down_change_balance(
+        self: Self,
+        balance: Decimal,
+        need_balance: Decimal,
+        last_price: Decimal,
+    ) -> Result[Decimal, Exception]:
+        """."""
+        if balance > need_balance:
+            return do(Ok(result) for result in self.devide(self.BASE_KEEP, last_price))
+        return Ok(balance)
+
+    def calc_up_change_balance(
+        self: Self,
+        balance: Decimal,
+        need_balance: Decimal,
+        last_price: Decimal,
+    ) -> Result[Decimal, Exception]:
+        """."""
+        if balance < need_balance:
+            return do(Ok(result) for result in self.devide(self.BASE_KEEP, last_price))
+        return Ok(balance)
+
+    def calc_up(
+        self: Self,
+        balance: Decimal,
+        last_price: Decimal,
+        increment: Decimal,
+    ) -> Result[OrderParam, Exception]:
+        """Calc up price and size tokens."""
+        return do(
+            Ok(
+                OrderParam(
+                    side="sell",
+                    price=up_last_price_str,
+                    size=f"{(balance - need_balance).quantize(increment, ROUND_DOWN)}",
+                ),
+            )
+            for up_last_price in self.up_1_percent(last_price)
+            for up_last_price_str in self.decimal_to_str(up_last_price)
+            for need_balance in self.devide(self.BASE_KEEP, up_last_price)
+            for balance in self.calc_up_change_balance(
+                balance,
+                need_balance,
+                last_price,
+            )
+        )
+
+    def calc_down(
+        self: Self,
+        balance: Decimal,
+        last_price: Decimal,
+        increment: Decimal,
+    ) -> Result[OrderParam, Exception]:
+        """Calc down price and size tokens."""
+        return do(
+            Ok(
+                OrderParam(
+                    side="buy",
+                    price=down_last_price_str,
+                    size=f"{(need_balance - balance).quantize(increment, ROUND_DOWN)}",
+                ),
+            )
+            for down_last_price in self.down_1_percent(last_price)
+            for down_last_price_str in self.decimal_to_str(down_last_price)
+            for need_balance in self.devide(self.BASE_KEEP, down_last_price)
+            for balance in self.calc_down_change_balance(
+                balance,
+                need_balance,
+                last_price,
+            )
+        )
+
+    def up_1_percent(self: Self, data: Decimal) -> Result[Decimal, Exception]:
+        """Current price plus 1 percent."""
+        return Ok(data * Decimal("1.01"))
+
+    def down_1_percent(self: Self, data: Decimal) -> Result[Decimal, Exception]:
+        """Current price minus 1 percent."""
+        return Ok(data * Decimal("0.99"))
+
     async def pre_init(self: Self) -> Result[Self, Exception]:
         """Pre-init.
 
@@ -1416,6 +1530,7 @@ class KCN:
             tasks = [
                 tg.create_task(self.balancer()),
                 tg.create_task(self.matching()),
+                tg.create_task(self.start_up_orders()),
             ]
 
         for task in tasks:
