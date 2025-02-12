@@ -1476,13 +1476,13 @@ class KCN:
                 OrderParam(
                     side="sell",
                     price=up_last_price_str,
-                    size=f"{(balance - need_balance).quantize(increment, ROUND_DOWN)}",
+                    size=f"{(balance_final - need_balance).quantize(increment, ROUND_DOWN)}",
                 ),
             )
             for up_last_price in self.up_1_percent(last_price)
             for up_last_price_str in self.decimal_to_str(up_last_price)
             for need_balance in self.devide(self.BASE_KEEP, up_last_price)
-            for balance in self.calc_up_change_balance(
+            for balance_final in self.calc_up_change_balance(
                 balance,
                 need_balance,
                 last_price,
@@ -1501,13 +1501,13 @@ class KCN:
                 OrderParam(
                     side="buy",
                     price=down_last_price_str,
-                    size=f"{(need_balance - balance).quantize(increment, ROUND_DOWN)}",
+                    size=f"{(need_balance - balance_final).quantize(increment, ROUND_DOWN)}",
                 ),
             )
             for down_last_price in self.down_1_percent(last_price)
             for down_last_price_str in self.decimal_to_str(down_last_price)
             for need_balance in self.devide(self.BASE_KEEP, down_last_price)
-            for balance in self.calc_down_change_balance(
+            for balance_final in self.calc_down_change_balance(
                 balance,
                 need_balance,
                 last_price,
