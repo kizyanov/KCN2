@@ -3,7 +3,7 @@
 import asyncio
 from base64 import b64encode
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from hashlib import sha256
 from hmac import HMAC
 from hmac import new as hmac_new
@@ -31,23 +31,57 @@ from websockets import exceptions as websockets_exceptions
 
 
 @dataclass(frozen=True)
+class OrderParam:
+    """."""
+
+    side: str = field(default="")
+    price: str = field(default="")
+    size: str = field(default="")
+
+
+@dataclass(frozen=True)
 class TelegramSendMsg:
     """."""
 
-    @dataclass
+    @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         ok: bool = field(default=False)
+
+
+@dataclass(frozen=True)
+class ApiV1MarketAllTickers:
+    """."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """Parse response request."""
+
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            @dataclass(frozen=True)
+            class Ticker:
+                """."""
+
+                symbol: str = field(default="")
+                last: str = field(default="")
+
+            ticker: list[Ticker] = field(default_factory=list[Ticker])
+
+        data: Data = field(default_factory=Data)
+        code: str = field(default="")
 
 
 @dataclass(frozen=True)
 class ApiV1MarginOrderPOST:
     """."""
 
-    @dataclass
+    @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         code: str = field(default="")
         orderId: str = field(default="")
@@ -55,11 +89,11 @@ class ApiV1MarginOrderPOST:
 
 @dataclass(frozen=True)
 class ApiV2SymbolsGET:
-    """."""
+    """https://www.kucoin.com/docs/rest/spot-trading/market-data/get-symbols-list."""
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
@@ -73,30 +107,30 @@ class ApiV2SymbolsGET:
         code: str = field(default="")
 
 
-@dataclass
+@dataclass(frozen=True)
 class ApiV1OrdersDELETE:
-    """."""
+    """https://www.kucoin.com/docs/rest/spot-trading/orders/cancel-order-by-orderid."""
 
-    @dataclass
+    @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         code: str = field(default="")
 
 
 @dataclass(frozen=True)
 class ApiV1OrdersGET:
-    """."""
+    """https://www.kucoin.com/docs/rest/spot-trading/orders/get-order-list."""
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
             """."""
 
-            @dataclass
+            @dataclass(frozen=True)
             class Item:
                 """."""
 
@@ -110,11 +144,11 @@ class ApiV1OrdersGET:
 
 @dataclass(frozen=True)
 class ApiV3MarginAccountsGET:
-    """."""
+    """https://www.kucoin.com/docs/rest/funding/funding-overview/get-account-detail-cross-margin."""
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
@@ -140,9 +174,9 @@ class OrderChangeV2:
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
-        @dataclass
+        @dataclass(frozen=True)
         class Data:
             """."""
 
@@ -161,7 +195,7 @@ class AccountBalanceChange:
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
@@ -179,7 +213,7 @@ class ApiV1BulletPrivatePOST:
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
@@ -204,7 +238,7 @@ class ApiV1AccountsGET:
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
@@ -410,7 +444,6 @@ class KCN:
                 ApiV1MarginOrderPOST.Res,
                 response_dict,
             )
-            for _ in self.logger_success(data_dataclass)
             for result in self.check_response_code(data_dataclass)
         )
 
@@ -452,7 +485,10 @@ class KCN:
         self: Self,
         params: dict[str, str],
     ) -> Result[ApiV1OrdersGET.Res, Exception]:
-        """Get all orders by params."""
+        """Get all orders by params.
+
+        https://www.kucoin.com/docs/rest/spot-trading/orders/get-order-list
+        """
         uri = "/api/v1/orders"
         method = "GET"
         return await do_async(
@@ -483,7 +519,10 @@ class KCN:
         self: Self,
         order_id: str,
     ) -> Result[ApiV1OrdersDELETE.Res, Exception]:
-        """Cancel order by `id`."""
+        """Cancel order by `id`.
+
+        https://www.kucoin.com/docs/rest/spot-trading/orders/cancel-order-by-orderid
+        """
         uri = f"/api/v1/orders/{order_id}"
         method = "DELETE"
         return await do_async(
@@ -538,7 +577,10 @@ class KCN:
         self: Self,
         params: dict[str, str],
     ) -> Result[ApiV3MarginAccountsGET.Res, Exception]:
-        """Get margin account user data."""
+        """Get margin account user data.
+
+        https://www.kucoin.com/docs/rest/funding/funding-overview/get-account-detail-cross-margin
+        """
         uri = "/api/v3/margin/accounts"
         method = "GET"
         return await do_async(
@@ -591,6 +633,32 @@ class KCN:
             for response_dict in self.parse_bytes_to_dict(response_bytes)
             for data_dataclass in self.convert_to_dataclass_from_dict(
                 ApiV1BulletPrivatePOST.Res,
+                response_dict,
+            )
+            for result in self.check_response_code(data_dataclass)
+        )
+
+    async def get_api_v1_market_all_tickers(
+        self: Self,
+    ) -> Result[ApiV1MarketAllTickers.Res, Exception]:
+        """Get all tickers with last price.
+
+        https://www.kucoin.com/docs/rest/spot-trading/market-data/get-all-tickers
+        """
+        uri = "/api/v1/market/allTickers"
+        method = "GET"
+        return await do_async(
+            Ok(result)
+            for full_url in self.get_full_url(self.BASE_URL, uri)
+            for headers in self.get_headers_not_auth()
+            for response_bytes in await self.request(
+                url=full_url,
+                method=method,
+                headers=headers,
+            )
+            for response_dict in self.parse_bytes_to_dict(response_bytes)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                ApiV1MarketAllTickers.Res,
                 response_dict,
             )
             for result in self.check_response_code(data_dataclass)
@@ -1036,24 +1104,28 @@ class KCN:
         {
             "ADA": {
                 "balance": "",
+                "last": "",
                 "increment": "",
                 "sellorder": "",
                 "buyorder": ""
             },
             "JUP": {
                 "balance": "",
+                "last": "",
                 "increment": "",
                 "sellorder": "",
                 "buyorder": ""
             },
             "SOL": {
                 "balance": "",
+                "last": "",
                 "increment": "",
                 "sellorder": "",
                 "buyorder": ""
             },
             "BTC": {
                 "balance": "",
+                "last": "",
                 "increment": "",
                 "sellorder": "",
                 "buyorder": ""
@@ -1065,7 +1137,11 @@ class KCN:
         }
         return Ok(None)
 
-    def to_decimal(self: Self, data: float | str) -> Result[Decimal, Exception]:
+    def decimal_to_str(self: Self, data: Decimal) -> Result[str, Exception]:
+        """Convert Decimal to str."""
+        return Ok(str(data))
+
+    def int_to_decimal(self: Self, data: float | str) -> Result[Decimal, Exception]:
         """Convert to Decimal format."""
         try:
             return Ok(Decimal(data))
@@ -1149,14 +1225,14 @@ class KCN:
         data: ApiV3MarginAccountsGET.Res.Data.Account,
     ) -> Result[Decimal, Exception]:
         """Export liability and available USDT from api_v3_margin_accounts."""
-        return do(Ok(result) for result in self.to_decimal(data.liability))
+        return do(Ok(result) for result in self.int_to_decimal(data.liability))
 
     def export_available_usdt(
         self: Self,
         data: ApiV3MarginAccountsGET.Res.Data.Account,
     ) -> Result[Decimal, Exception]:
         """Export liability and available USDT from api_v3_margin_accounts."""
-        return do(Ok(result) for result in self.to_decimal(data.available))
+        return do(Ok(result) for result in self.int_to_decimal(data.available))
 
     async def alertest(self: Self) -> Result[None, Exception]:
         """Alert statistic."""
@@ -1267,6 +1343,16 @@ class KCN:
             )
         )
 
+    async def start_up_orders(self: Self) -> Result[None, Exception]:
+        """."""
+        # wait while matcheer and balancer would be ready
+        await asyncio.sleep(10)
+
+        for ticket, params in self.book.items():
+            self.logger_info(f"{ticket=} {params=}")
+
+        return Ok(None)
+
     def _fill_balance(
         self: Self,
         data: ApiV1AccountsGET.Res,
@@ -1311,6 +1397,116 @@ class KCN:
             for _ in self._fill_base_increment(ticket_info)
         )
 
+    def _fill_last_price(
+        self: Self,
+        data: ApiV1MarketAllTickers.Res,
+    ) -> Result[None, Exception]:
+        """Fill last price for each token."""
+        for ticket in data.data.ticker:
+            symbol = f"{ticket.symbol}-USDT"
+            if symbol in self.book:
+                self.book[symbol]["last"] = Decimal(ticket.last)
+        return Ok(None)
+
+    async def fill_last_price(self: Self) -> Result[None, Exception]:
+        """Fill last price for first order init."""
+        return await do_async(
+            Ok(None)
+            for market_ticket in await self.get_api_v1_market_all_tickers()
+            for _ in self._fill_last_price(market_ticket)
+        )
+
+    def devide(
+        self: Self,
+        divider: Decimal,
+        divisor: Decimal,
+    ) -> Result[Decimal, Exception]:
+        """Devide."""
+        try:
+            return Ok(divider / divisor)
+        except ZeroDivisionError as exc:
+            return Err(exc)
+
+    def calc_down_change_balance(
+        self: Self,
+        balance: Decimal,
+        need_balance: Decimal,
+        last_price: Decimal,
+    ) -> Result[Decimal, Exception]:
+        """."""
+        if balance > need_balance:
+            return do(Ok(result) for result in self.devide(self.BASE_KEEP, last_price))
+        return Ok(balance)
+
+    def calc_up_change_balance(
+        self: Self,
+        balance: Decimal,
+        need_balance: Decimal,
+        last_price: Decimal,
+    ) -> Result[Decimal, Exception]:
+        """."""
+        if balance < need_balance:
+            return do(Ok(result) for result in self.devide(self.BASE_KEEP, last_price))
+        return Ok(balance)
+
+    def calc_up(
+        self: Self,
+        balance: Decimal,
+        last_price: Decimal,
+        increment: Decimal,
+    ) -> Result[OrderParam, Exception]:
+        """Calc up price and size tokens."""
+        return do(
+            Ok(
+                OrderParam(
+                    side="sell",
+                    price=up_last_price_str,
+                    size=f"{(balance - need_balance).quantize(increment, ROUND_DOWN)}",
+                ),
+            )
+            for up_last_price in self.up_1_percent(last_price)
+            for up_last_price_str in self.decimal_to_str(up_last_price)
+            for need_balance in self.devide(self.BASE_KEEP, up_last_price)
+            for balance in self.calc_up_change_balance(
+                balance,
+                need_balance,
+                last_price,
+            )
+        )
+
+    def calc_down(
+        self: Self,
+        balance: Decimal,
+        last_price: Decimal,
+        increment: Decimal,
+    ) -> Result[OrderParam, Exception]:
+        """Calc down price and size tokens."""
+        return do(
+            Ok(
+                OrderParam(
+                    side="buy",
+                    price=down_last_price_str,
+                    size=f"{(need_balance - balance).quantize(increment, ROUND_DOWN)}",
+                ),
+            )
+            for down_last_price in self.down_1_percent(last_price)
+            for down_last_price_str in self.decimal_to_str(down_last_price)
+            for need_balance in self.devide(self.BASE_KEEP, down_last_price)
+            for balance in self.calc_down_change_balance(
+                balance,
+                need_balance,
+                last_price,
+            )
+        )
+
+    def up_1_percent(self: Self, data: Decimal) -> Result[Decimal, Exception]:
+        """Current price plus 1 percent."""
+        return Ok(data * Decimal("1.01"))
+
+    def down_1_percent(self: Self, data: Decimal) -> Result[Decimal, Exception]:
+        """Current price minus 1 percent."""
+        return Ok(data * Decimal("0.99"))
+
     async def pre_init(self: Self) -> Result[Self, Exception]:
         """Pre-init.
 
@@ -1334,6 +1530,7 @@ class KCN:
             for _ in await self.massive_cancel_order(orders_list_str)
             for _ in await self.fill_balance()
             for _ in await self.fill_base_increment()
+            for _ in await self.fill_last_price()
         )
 
     async def infinity_task(self: Self) -> Result[None, Exception]:
@@ -1342,6 +1539,7 @@ class KCN:
             tasks = [
                 tg.create_task(self.balancer()),
                 tg.create_task(self.matching()),
+                tg.create_task(self.start_up_orders()),
             ]
 
         for task in tasks:
