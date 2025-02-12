@@ -1210,13 +1210,13 @@ class KCN:
         """."""
         match side:
             case "sell":
-                order_id = ""
+                order_type = "buyorder"
             case "buy":
-                order_id = ""
+                order_type = "sellorder"
             case _:
                 return Err(Exception("Empty side in matching"))
 
-        return Ok(self.book_orders[symbol][order_id])
+        return Ok(self.book_orders[symbol][order_type])
 
     async def event_matching_filled(
         self: Self,
