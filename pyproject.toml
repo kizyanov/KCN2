@@ -13,6 +13,7 @@ aiohttp = { extras = ["speedups"], version = "^3.11.12" }
 loguru = "^0.7.3"
 websockets = "^14.2"
 dacite = "^1.9.2"
+asyncpg = "^0.30.0"
 
 
 [tool.poetry.group.dev.dependencies]

@@ -34,7 +34,7 @@ from websockets import exceptions as websockets_exceptions
 class TelegramSendMsg:
     """."""
 
-    @dataclass
+    @dataclass(frozen=True)
     class Res:
         """."""
 
@@ -42,10 +42,35 @@ class TelegramSendMsg:
 
 
 @dataclass(frozen=True)
+class ApiV1MarketAllTickers:
+    """."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """."""
+
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            @dataclass(frozen=True)
+            class Ticker:
+                """."""
+
+                symbol: str = field(default="")
+                last: str = field(default="")
+
+            ticker: list[Ticker] = field(default_factory=list[Ticker])
+
+        data: Data = field(default_factory=Data)
+        code: str = field(default="")
+
+
+@dataclass(frozen=True)
 class ApiV1MarginOrderPOST:
     """."""
 
-    @dataclass
+    @dataclass(frozen=True)
     class Res:
         """."""
 
@@ -73,11 +98,11 @@ class ApiV2SymbolsGET:
         code: str = field(default="")
 
 
-@dataclass
+@dataclass(frozen=True)
 class ApiV1OrdersDELETE:
     """."""
 
-    @dataclass
+    @dataclass(frozen=True)
     class Res:
         """."""
 
@@ -96,7 +121,7 @@ class ApiV1OrdersGET:
         class Data:
             """."""
 
-            @dataclass
+            @dataclass(frozen=True)
             class Item:
                 """."""
 
@@ -142,7 +167,7 @@ class OrderChangeV2:
     class Res:
         """."""
 
-        @dataclass
+        @dataclass(frozen=True)
         class Data:
             """."""
 
@@ -410,7 +435,6 @@ class KCN:
                 ApiV1MarginOrderPOST.Res,
                 response_dict,
             )
-            for _ in self.logger_success(data_dataclass)
             for result in self.check_response_code(data_dataclass)
         )
 
@@ -591,6 +615,32 @@ class KCN:
             for response_dict in self.parse_bytes_to_dict(response_bytes)
             for data_dataclass in self.convert_to_dataclass_from_dict(
                 ApiV1BulletPrivatePOST.Res,
+                response_dict,
+            )
+            for result in self.check_response_code(data_dataclass)
+        )
+
+    async def get_api_v1_market_all_tickers(
+        self: Self,
+    ) -> Result[ApiV1MarketAllTickers.Res, Exception]:
+        """Get all tickers with last price.
+
+        https://www.kucoin.com/docs/rest/spot-trading/market-data/get-all-tickers
+        """
+        uri = "/api/v1/market/allTickers"
+        method = "GET"
+        return await do_async(
+            Ok(result)
+            for full_url in self.get_full_url(self.BASE_URL, uri)
+            for headers in self.get_headers_not_auth()
+            for response_bytes in await self.request(
+                url=full_url,
+                method=method,
+                headers=headers,
+            )
+            for response_dict in self.parse_bytes_to_dict(response_bytes)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                ApiV1MarketAllTickers.Res,
                 response_dict,
             )
             for result in self.check_response_code(data_dataclass)
@@ -1036,24 +1086,28 @@ class KCN:
         {
             "ADA": {
                 "balance": "",
+                "last": "",
                 "increment": "",
                 "sellorder": "",
                 "buyorder": ""
             },
             "JUP": {
                 "balance": "",
+                "last": "",
                 "increment": "",
                 "sellorder": "",
                 "buyorder": ""
             },
             "SOL": {
                 "balance": "",
+                "last": "",
                 "increment": "",
                 "sellorder": "",
                 "buyorder": ""
             },
             "BTC": {
                 "balance": "",
+                "last": "",
                 "increment": "",
                 "sellorder": "",
                 "buyorder": ""
@@ -1311,6 +1365,25 @@ class KCN:
             for _ in self._fill_base_increment(ticket_info)
         )
 
+    def _fill_last_price(
+        self: Self,
+        data: ApiV1MarketAllTickers.Res,
+    ) -> Result[None, Exception]:
+        """Fill last price for each token."""
+        for ticket in data.data.ticker:
+            symbol = f"{ticket.symbol}-USDT"
+            if symbol in self.book:
+                self.book[symbol]["last"] = Decimal(ticket.last)
+        return Ok(None)
+
+    async def fill_last_price(self: Self) -> Result[None, Exception]:
+        """Fill last price for first order init."""
+        return await do_async(
+            Ok(None)
+            for market_ticket in await self.get_api_v1_market_all_tickers()
+            for _ in self._fill_last_price(market_ticket)
+        )
+
     async def pre_init(self: Self) -> Result[Self, Exception]:
         """Pre-init.
 
@@ -1334,6 +1407,7 @@ class KCN:
             for _ in await self.massive_cancel_order(orders_list_str)
             for _ in await self.fill_balance()
             for _ in await self.fill_base_increment()
+            for _ in await self.fill_last_price()
         )
 
     async def infinity_task(self: Self) -> Result[None, Exception]:
