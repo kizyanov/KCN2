@@ -102,6 +102,7 @@ class ApiV2SymbolsGET:
             baseCurrency: str = field(default="")
             quoteCurrency: str = field(default="")
             baseIncrement: str = field(default="")
+            priceIncrement: str = field(default="")
 
         data: list[Data] = field(default_factory=list[Data])
         code: str = field(default="")
@@ -1106,28 +1107,28 @@ class KCN:
             "ADA": {
                 "balance": "",
                 "last": "",
-                "increment": "",
+                "baseincrement": "",
                 "sellorder": "",
                 "buyorder": ""
             },
             "JUP": {
                 "balance": "",
                 "last": "",
-                "increment": "",
+                "baseincrement": "",
                 "sellorder": "",
                 "buyorder": ""
             },
             "SOL": {
                 "balance": "",
                 "last": "",
-                "increment": "",
+                "baseincrement": "",
                 "sellorder": "",
                 "buyorder": ""
             },
             "BTC": {
                 "balance": "",
                 "last": "",
-                "increment": "",
+                "baseincrement": "",
                 "sellorder": "",
                 "buyorder": ""
             }
@@ -1395,7 +1396,8 @@ class KCN:
             for order_up in self.calc_up(
                 params["balance"],
                 params["last"],
-                params["increment"],
+                params["baseincrement"],
+                params["priceincrement"],
             )
             for params_order_up in self.complete_margin_order(
                 side=order_up.side,
@@ -1409,7 +1411,8 @@ class KCN:
             for order_down in self.calc_down(
                 params["balance"],
                 params["last"],
-                params["increment"],
+                params["baseincrement"],
+                params["priceincrement"],
             )
             for params_order_down in self.complete_margin_order(
                 side=order_down.side,
@@ -1472,17 +1475,33 @@ class KCN:
                 out_side_ticket.baseCurrency in self.book
                 and out_side_ticket.quoteCurrency == "USDT"
             ):
-                self.book[out_side_ticket.baseCurrency]["increment"] = Decimal(
+                self.book[out_side_ticket.baseCurrency]["baseincrement"] = Decimal(
                     out_side_ticket.baseIncrement,
                 )
         return Ok(None)
 
-    async def fill_base_increment(self: Self) -> Result[None, Exception]:
-        """Fill base increment from api."""
+    def _fill_price_increment(
+        self: Self,
+        data: ApiV2SymbolsGET.Res,
+    ) -> Result[None, Exception]:
+        """Fill price increment by each token."""
+        for out_side_ticket in data.data:
+            if (
+                out_side_ticket.baseCurrency in self.book
+                and out_side_ticket.quoteCurrency == "USDT"
+            ):
+                self.book[out_side_ticket.baseCurrency]["priceincrement"] = Decimal(
+                    out_side_ticket.priceIncrement,
+                )
+        return Ok(None)
+
+    async def fill_increment(self: Self) -> Result[None, Exception]:
+        """Fill increment from api."""
         return await do_async(
             Ok(None)
             for ticket_info in await self.get_api_v2_symbols()
             for _ in self._fill_base_increment(ticket_info)
+            for _ in self._fill_price_increment(ticket_info)
         )
 
     def _fill_last_price(
@@ -1537,11 +1556,20 @@ class KCN:
             return do(Ok(result) for result in self.devide(self.BASE_KEEP, last_price))
         return Ok(balance)
 
+    def quantize(
+        self: Self,
+        data: Decimal,
+        increment: Decimal,
+    ) -> Result[Decimal, Exception]:
+        """Quantize to down."""
+        return Ok(data.quantize(increment, ROUND_DOWN))
+
     def calc_up(
         self: Self,
         balance: Decimal,
         last_price: Decimal,
-        increment: Decimal,
+        baseincrement: Decimal,
+        priceincrement: Decimal,
     ) -> Result[OrderParam, Exception]:
         """Calc up price and size tokens."""
         return do(
@@ -1549,24 +1577,28 @@ class KCN:
                 OrderParam(
                     side="sell",
                     price=up_last_price_str,
-                    size=f"{(balance_final - need_balance).quantize(increment, ROUND_DOWN)}",
+                    size=size_str,
                 ),
             )
             for up_last_price in self.up_1_percent(last_price)
-            for up_last_price_str in self.decimal_to_str(up_last_price)
             for need_balance in self.devide(self.BASE_KEEP, up_last_price)
             for balance_final in self.calc_up_change_balance(
                 balance,
                 need_balance,
                 last_price,
             )
+            for up_last_price_quantize in self.quantize(up_last_price, priceincrement)
+            for up_last_price_str in self.decimal_to_str(up_last_price_quantize)
+            for size in self.quantize((balance_final - need_balance), baseincrement)
+            for size_str in self.decimal_to_str(size)
         )
 
     def calc_down(
         self: Self,
         balance: Decimal,
         last_price: Decimal,
-        increment: Decimal,
+        baseincrement: Decimal,
+        priceincrement: Decimal,
     ) -> Result[OrderParam, Exception]:
         """Calc down price and size tokens."""
         return do(
@@ -1574,7 +1606,7 @@ class KCN:
                 OrderParam(
                     side="buy",
                     price=down_last_price_str,
-                    size=f"{(need_balance - balance_final).quantize(increment, ROUND_DOWN)}",
+                    size=size_str,
                 ),
             )
             for down_last_price in self.down_1_percent(last_price)
@@ -1585,6 +1617,13 @@ class KCN:
                 need_balance,
                 last_price,
             )
+            for down_last_price_quantize in self.quantize(
+                down_last_price,
+                priceincrement,
+            )
+            for down_last_price_str in self.decimal_to_str(down_last_price_quantize)
+            for size in self.quantize((need_balance - balance_final), baseincrement)
+            for size_str in self.decimal_to_str(size)
         )
 
     def up_1_percent(self: Self, data: Decimal) -> Result[Decimal, Exception]:
@@ -1617,7 +1656,7 @@ class KCN:
             )
             for _ in await self.massive_cancel_order(orders_list_str)
             for _ in await self.fill_balance()
-            for _ in await self.fill_base_increment()
+            for _ in await self.fill_increment()
             for _ in await self.fill_last_price()
         )
 
