@@ -83,8 +83,14 @@ class ApiV1MarginOrderPOST:
     class Res:
         """Parse response request."""
 
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            orderId: str = field(default="")
+
         code: str = field(default="")
-        orderId: str = field(default="")
+        data: Data = field(default_factory=Data)
 
 
 @dataclass(frozen=True)
@@ -441,7 +447,6 @@ class KCN:
                 data=dumps_data_bytes,
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
-            for _ in self.logger_info(response_dict)
             for data_dataclass in self.convert_to_dataclass_from_dict(
                 ApiV1MarginOrderPOST.Res,
                 response_dict,
@@ -1102,39 +1107,56 @@ class KCN:
         """Build own structure.
 
         build inside book for tickets
-
+        book
         {
             "ADA": {
-                "balance": "",
-                "last": "",
-                "baseincrement": "",
+                "balance": Decimal,
+                "last": Decimal,
+                "baseincrement": Decimal,
+                "priceincrement": Decimal,
+            },
+            "JUP": {
+                "balance": Decimal,
+                "last": Decimal,
+                "baseincrement": Decimal,
+                "priceincrement": Decimal,
+            },
+            "SOL": {
+                "balance": Decimal,
+                "last": Decimal,
+                "baseincrement": Decimal,
+                "priceincrement": Decimal,
+            },
+            "BTC": {
+                "balance": Decimal,
+                "last": Decimal,
+                "baseincrement": Decimal,
+                "priceincrement": Decimal,
+            }
+        }
+        book_orders = {
+            "ADA": {
                 "sellorder": "",
                 "buyorder": ""
             },
             "JUP": {
-                "balance": "",
-                "last": "",
-                "baseincrement": "",
                 "sellorder": "",
                 "buyorder": ""
             },
             "SOL": {
-                "balance": "",
-                "last": "",
-                "baseincrement": "",
                 "sellorder": "",
                 "buyorder": ""
             },
             "BTC": {
-                "balance": "",
-                "last": "",
-                "baseincrement": "",
                 "sellorder": "",
                 "buyorder": ""
             }
         }
         """
         self.book: dict[str, dict[str, Decimal]] = {
+            ticket: {} for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
+        }
+        self.book_orders: dict[str, dict[str, str]] = {
             ticket: {} for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
         }
         return Ok(None)
@@ -1384,6 +1406,26 @@ class KCN:
             for client_id in self.format_to_str_uuid(default_uuid4)
         )
 
+    def save_order_id_sell(
+        self: Self,
+        symbol: str,
+        order_id: str,
+    ) -> Result[None, Exception]:
+        """."""
+        if symbol in self.book:
+            self.book_orders[symbol]["sellorder"] = order_id
+        return Ok(None)
+
+    def save_order_id_buy(
+        self: Self,
+        symbol: str,
+        order_id: str,
+    ) -> Result[None, Exception]:
+        """."""
+        if symbol in self.book:
+            self.book_orders[symbol]["buyorder"] = order_id
+        return Ok(None)
+
     async def make_twice_margin_order(
         self: Self,
         ticket: str,
@@ -1406,7 +1448,9 @@ class KCN:
                 size=order_up.size,
             )
             for order_id in await self.post_api_v1_margin_order(params_order_up)
-            for _ in self.logger_success(order_id)
+            for _ in self.save_order_id_sell(ticket, order_id.data.orderId)
+            for _ in self.logger_success(self.book_orders)
+            for _ in self.logger_success(self.book)
             # for down
             for order_down in self.calc_down(
                 params["balance"],
@@ -1421,7 +1465,9 @@ class KCN:
                 size=order_down.size,
             )
             for order_id in await self.post_api_v1_margin_order(params_order_down)
-            for _ in self.logger_success(order_id)
+            for _ in self.save_order_id_buy(ticket, order_id.data.orderId)
+            for _ in self.logger_success(self.book_orders)
+            for _ in self.logger_success(self.book)
         ):
             case Ok(None):
                 pass
