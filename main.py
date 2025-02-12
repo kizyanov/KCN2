@@ -45,7 +45,7 @@ class TelegramSendMsg:
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         ok: bool = field(default=False)
 
@@ -56,7 +56,7 @@ class ApiV1MarketAllTickers:
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
@@ -81,7 +81,7 @@ class ApiV1MarginOrderPOST:
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         code: str = field(default="")
         orderId: str = field(default="")
@@ -89,11 +89,11 @@ class ApiV1MarginOrderPOST:
 
 @dataclass(frozen=True)
 class ApiV2SymbolsGET:
-    """."""
+    """https://www.kucoin.com/docs/rest/spot-trading/market-data/get-symbols-list."""
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
@@ -109,22 +109,22 @@ class ApiV2SymbolsGET:
 
 @dataclass(frozen=True)
 class ApiV1OrdersDELETE:
-    """."""
+    """https://www.kucoin.com/docs/rest/spot-trading/orders/cancel-order-by-orderid."""
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         code: str = field(default="")
 
 
 @dataclass(frozen=True)
 class ApiV1OrdersGET:
-    """."""
+    """https://www.kucoin.com/docs/rest/spot-trading/orders/get-order-list."""
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
@@ -144,11 +144,11 @@ class ApiV1OrdersGET:
 
 @dataclass(frozen=True)
 class ApiV3MarginAccountsGET:
-    """."""
+    """https://www.kucoin.com/docs/rest/funding/funding-overview/get-account-detail-cross-margin."""
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
@@ -174,7 +174,7 @@ class OrderChangeV2:
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
@@ -195,7 +195,7 @@ class AccountBalanceChange:
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
@@ -213,7 +213,7 @@ class ApiV1BulletPrivatePOST:
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
@@ -238,7 +238,7 @@ class ApiV1AccountsGET:
 
     @dataclass(frozen=True)
     class Res:
-        """."""
+        """Parse response request."""
 
         @dataclass(frozen=True)
         class Data:
@@ -485,7 +485,10 @@ class KCN:
         self: Self,
         params: dict[str, str],
     ) -> Result[ApiV1OrdersGET.Res, Exception]:
-        """Get all orders by params."""
+        """Get all orders by params.
+
+        https://www.kucoin.com/docs/rest/spot-trading/orders/get-order-list
+        """
         uri = "/api/v1/orders"
         method = "GET"
         return await do_async(
@@ -516,7 +519,10 @@ class KCN:
         self: Self,
         order_id: str,
     ) -> Result[ApiV1OrdersDELETE.Res, Exception]:
-        """Cancel order by `id`."""
+        """Cancel order by `id`.
+
+        https://www.kucoin.com/docs/rest/spot-trading/orders/cancel-order-by-orderid
+        """
         uri = f"/api/v1/orders/{order_id}"
         method = "DELETE"
         return await do_async(
@@ -571,7 +577,10 @@ class KCN:
         self: Self,
         params: dict[str, str],
     ) -> Result[ApiV3MarginAccountsGET.Res, Exception]:
-        """Get margin account user data."""
+        """Get margin account user data.
+
+        https://www.kucoin.com/docs/rest/funding/funding-overview/get-account-detail-cross-margin
+        """
         uri = "/api/v3/margin/accounts"
         method = "GET"
         return await do_async(
