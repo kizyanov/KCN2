@@ -1132,7 +1132,7 @@ class KCN:
             }
         }
         """
-        self.book: dict[str, dict[str, str | Decimal]] = {
+        self.book: dict[str, dict[str, Decimal]] = {
             ticket: {} for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
         }
         return Ok(None)
@@ -1345,10 +1345,25 @@ class KCN:
 
     async def start_up_orders(self: Self) -> Result[None, Exception]:
         """."""
-        # wait while matcheer and balancer would be ready
+        # wait while matcher and balancer would be ready
         await asyncio.sleep(10)
 
         for ticket, params in self.book.items():
+            do(
+                Ok(None)
+                for order_up in self.calc_up(
+                    params["balance"],
+                    params["last"],
+                    params["increment"],
+                )
+                for _ in self.logger_info(f"{order_up=}")
+                for order_down in self.calc_down(
+                    params["balance"],
+                    params["last"],
+                    params["increment"],
+                )
+                for _ in self.logger_info(f"{order_down=}")
+            )
             self.logger_info(f"{ticket=} {params=}")
 
         return Ok(None)
