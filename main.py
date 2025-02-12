@@ -67,7 +67,7 @@ class ApiV1MarketAllTickers:
                 """."""
 
                 symbol: str = field(default="")
-                last: str = field(default="")
+                last: str | None = field(default=None)
 
             ticker: list[Ticker] = field(default_factory=list[Ticker])
 
@@ -1404,7 +1404,7 @@ class KCN:
         """Fill last price for each token."""
         for ticket in data.data.ticker:
             symbol = f"{ticket.symbol}-USDT"
-            if symbol in self.book:
+            if symbol in self.book and isinstance(ticket.last, str):
                 self.book[symbol]["last"] = Decimal(ticket.last)
         return Ok(None)
 
