@@ -421,7 +421,6 @@ class KCN:
         return await do_async(
             Ok(result)
             for full_url in self.get_full_url(self.BASE_URL, uri)
-            for _ in self.logger_info(data)
             for dumps_data_bytes in self.dumps_dict_to_bytes(data)
             for dumps_data_str in self.decode(dumps_data_bytes)
             for now_time in self.get_now_time()
@@ -442,6 +441,7 @@ class KCN:
                 data=dumps_data_bytes,
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
+            for _ in self.logger_info(response_dict)
             for data_dataclass in self.convert_to_dataclass_from_dict(
                 ApiV1MarginOrderPOST.Res,
                 response_dict,
