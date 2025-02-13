@@ -3,7 +3,7 @@
 import asyncio
 from base64 import b64encode
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from hashlib import sha256
 from hmac import HMAC
@@ -395,11 +395,16 @@ class KCN:
 
     async def send_telegram_msg(self: Self, data: str) -> Result[str, Exception]:
         """Send msg to telegram."""
-        return await do_async(
+        match await do_async(
             Ok("checked_dict")
             for chat_ids in self.get_chat_ids_for_telegram()
             for _ in await self.send_msg_to_each_chat_id(chat_ids, data)
-        )
+        ):
+            case Ok(value):
+                return Ok(value)
+            case Err(exc):
+                logger.exception(exc)
+        return Ok("Error")
 
     def get_env(self: Self, key: str) -> Result[str, ValueError]:
         """Just get key from EVN."""
@@ -1767,17 +1772,20 @@ class KCN:
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
         """Insert data to db."""
-        async with self.pool.acquire() as conn, conn.transaction():
-            # Run the query passing the request argument.
-            await conn.execute(
-                """INSERT INTO main(exchange, symbol, side, size, price, date) VALUES($1, $2, $3, $4, $5, $6)""",
-                "kucoin",
-                data.symbol,
-                data.side,
-                data.size,
-                data.price,
-                datetime.now(tz=UTC),
-            )
+        try:
+            async with self.pool.acquire() as conn, conn.transaction():
+                # Run the query passing the request argument.
+                await conn.execute(
+                    """INSERT INTO main(exchange, symbol, side, size, price, date) VALUES($1, $2, $3, $4, $5, $6)""",
+                    "kucoin",
+                    data.symbol,
+                    data.side,
+                    data.size,
+                    data.price,
+                    datetime.now(),  # noqa: DTZ005
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(exc)
         return Ok(None)
 
     async def create_db_pool(self: Self) -> Result[None, Exception]:
