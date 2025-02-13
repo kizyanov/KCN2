@@ -3,6 +3,7 @@
 import asyncio
 from base64 import b64encode
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from hashlib import sha256
 from hmac import HMAC
@@ -14,6 +15,7 @@ from urllib.parse import urljoin
 from uuid import UUID, uuid4
 
 from aiohttp import ClientConnectorError, ClientSession
+from asyncpg import create_pool
 from dacite import (
     ForwardReferenceError,
     MissingValueError,
@@ -294,6 +296,13 @@ class KCN:
         # All about tlg
         self.TELEGRAM_BOT_API_KEY = self.get_env("TELEGRAM_BOT_API_KEY").unwrap()
         self.TELEGRAM_BOT_CHAT_ID = self.get_list_env("TELEGRAM_BOT_CHAT_ID").unwrap()
+
+        # db store
+        self.PG_USER = self.get_env("PG_USER").unwrap()
+        self.PG_PASSWORD = self.get_env("PG_PASSWORD").unwrap()
+        self.PG_DATABASE = self.get_env("PG_DATABASE").unwrap()
+        self.PG_HOST = self.get_env("PG_HOST").unwrap()
+        self.PG_PORT = self.get_env("PG_PORT").unwrap()
 
         logger.success("Settings are OK!")
 
@@ -1271,6 +1280,8 @@ class KCN:
             # Send telegram msg
             for msg_for_telegram in self.create_msg_for_telegram(data)
             for _ in await self.send_telegram_msg(msg_for_telegram)
+            # send data to db
+            for _ in await self.insert_data_to_db(data)
             # cancel other order
             for get_open_order_for_cancel in self.find_order_for_cancel(
                 replaced_name,
@@ -1751,6 +1762,39 @@ class KCN:
         """Current price minus 1 percent."""
         return Ok(data * Decimal("0.99"))
 
+    async def insert_data_to_db(
+        self: Self,
+        data: OrderChangeV2.Res.Data,
+    ) -> Result[None, Exception]:
+        """Insert data to db."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            # Run the query passing the request argument.
+            await conn.execute(
+                """INSERT INTO main(exchange, symbol, side, size, price, date) VALUES($1, $2, $3, $4, $5, $6)""",
+                "kucoin",
+                data.symbol,
+                data.side,
+                data.size,
+                data.price,
+                datetime.now(tz=UTC),
+            )
+        return Ok(None)
+
+    async def create_db_pool(self: Self) -> Result[None, Exception]:
+        """Create Postgresql connection pool."""
+        try:
+            self.pool = await create_pool(
+                user=self.PG_USER,
+                password=self.PG_PASSWORD,
+                database=self.PG_DATABASE,
+                host=self.PG_HOST,
+                port=self.PG_PORT,
+                timeout=5,
+            )
+            return Ok(None)
+        except ConnectionRefusedError as exc:
+            return Err(exc)
+
     async def pre_init(self: Self) -> Result[Self, Exception]:
         """Pre-init.
 
@@ -1761,6 +1805,7 @@ class KCN:
         """
         return await do_async(
             Ok(self)
+            for _ in await self.create_db_pool()
             for _ in self.create_book()
             for orders_for_cancel in await self.get_api_v1_orders(
                 params={
