@@ -1541,8 +1541,6 @@ class KCN:
             )
             for order_id in await self.post_api_v1_margin_order(params_order_up)
             for _ in self.save_order_id_sell(ticket, order_id.data.orderId)
-            for _ in self.logger_success(self.book_orders)
-            for _ in self.logger_success(self.book)
             # for down
             for order_down in self.calc_down(ticket)
             for params_order_down in self.complete_margin_order(
@@ -1553,8 +1551,6 @@ class KCN:
             )
             for order_id in await self.post_api_v1_margin_order(params_order_down)
             for _ in self.save_order_id_buy(ticket, order_id.data.orderId)
-            for _ in self.logger_success(self.book_orders)
-            for _ in self.logger_success(self.book)
         ):
             case Ok(None):
                 pass
@@ -1569,8 +1565,6 @@ class KCN:
 
         for ticket in self.book:
             await self.make_updown_margin_order(ticket)
-
-            self.logger_info(f"{ticket} {self.book[ticket]}")
 
         return Ok(None)
 
