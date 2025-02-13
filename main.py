@@ -30,6 +30,24 @@ from websockets import ClientConnection, connect
 from websockets import exceptions as websockets_exceptions
 
 
+@dataclass
+class Book:
+    """."""
+
+    balance: Decimal = field(default=Decimal("0"))
+    last_price: Decimal = field(default=Decimal("0"))
+    baseincrement: Decimal = field(default=Decimal("0"))
+    priceincrement: Decimal = field(default=Decimal("0"))
+
+
+@dataclass
+class BookOrder:
+    """."""
+
+    buyorder: str = field(default="")
+    sellorder: str = field(default="")
+
+
 @dataclass(frozen=True)
 class OrderParam:
     """."""
@@ -1153,11 +1171,13 @@ class KCN:
             }
         }
         """
-        self.book: dict[str, dict[str, Decimal]] = {
-            ticket: {} for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
+        self.book: dict[str, Book] = {
+            ticket: Book() for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
         }
-        self.book_orders: dict[str, dict[str, str]] = {
-            ticket: {} for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
+        self.book_orders: dict[str, BookOrder] = {
+            ticket: BookOrder()
+            for ticket in self.ALL_CURRENCY
+            if isinstance(ticket, str)
         }
         return Ok(None)
 
@@ -1178,7 +1198,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Fill balance from event balance websocket."""
         if data.data.currency in self.book:
-            self.book[data.data.currency]["balance"] = Decimal(data.data.total)
+            self.book[data.data.currency].balance = Decimal(data.data.total)
         return Ok(None)
 
     async def listen_balance_msg(
@@ -1210,13 +1230,31 @@ class KCN:
         """."""
         match side:
             case "sell":
-                order_type = "buyorder"
+                return Ok(self.book_orders[symbol].buyorder)
             case "buy":
-                order_type = "sellorder"
+                return Ok(self.book_orders[symbol].sellorder)
             case _:
                 return Err(Exception("Empty side in matching"))
 
-        return Ok(self.book_orders[symbol][order_type])
+        return Ok(self.book_orders[symbol].order_type)
+
+    def create_msg_for_telegram(
+        self: Self,
+        data: OrderChangeV2.Res.Data,
+    ) -> Result[str, Exception]:
+        """Create personal telegram text."""
+        return Ok(
+            f"{data.side.upper()}:{data.symbol} by:{data.price} on {data.size} tokens",
+        )
+
+    def update_last_price_to_book(
+        self: Self,
+        ticker: str,
+        price: Decimal,
+    ) -> Result[None, Exception]:
+        """."""
+        self.book[ticker].last_price = price
+        return Ok(None)
 
     async def event_matching_filled(
         self: Self,
@@ -1226,19 +1264,21 @@ class KCN:
         # need update price
         match await do_async(
             Ok(None)
-            for _ in await self.send_telegram_msg(
-                f"side:{data.side}, symbol:{data.symbol} price:{data.price}",
-            )
             for replaced_name in self.replace_symbol_name(data.symbol)
+            # update last price
+            for price_like_decimal in self.int_to_decimal(data.price)
+            for _ in self.update_last_price_to_book(replaced_name, price_like_decimal)
+            # Send telegram msg
+            for msg_for_telegram in self.create_msg_for_telegram(data)
+            for _ in await self.send_telegram_msg(msg_for_telegram)
+            # cancel other order
             for get_open_order_for_cancel in self.find_order_for_cancel(
                 replaced_name,
                 data.side,
             )
             for _ in await self.delete_api_v1_order(get_open_order_for_cancel)
-            for _ in await self.make_twice_margin_order(
-                replaced_name,
-                self.book[replaced_name],
-            )
+            # create new orders
+            for _ in await self.make_updown_margin_order(replaced_name)
         ):
             case Ok(None):
                 pass
@@ -1455,7 +1495,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         if symbol in self.book:
-            self.book_orders[symbol]["sellorder"] = order_id
+            self.book_orders[symbol].sellorder = order_id
         return Ok(None)
 
     def save_order_id_buy(
@@ -1465,24 +1505,18 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         if symbol in self.book:
-            self.book_orders[symbol]["buyorder"] = order_id
+            self.book_orders[symbol].buyorder = order_id
         return Ok(None)
 
-    async def make_twice_margin_order(
+    async def make_updown_margin_order(
         self: Self,
         ticket: str,
-        params: dict[str, Decimal],
     ) -> Result[None, Exception]:
         """."""
         match await do_async(
             Ok(None)
             # for up
-            for order_up in self.calc_up(
-                params["balance"],
-                params["last"],
-                params["baseincrement"],
-                params["priceincrement"],
-            )
+            for order_up in self.calc_up(ticket)
             for params_order_up in self.complete_margin_order(
                 side=order_up.side,
                 symbol=f"{ticket}-USDT",
@@ -1494,12 +1528,7 @@ class KCN:
             for _ in self.logger_success(self.book_orders)
             for _ in self.logger_success(self.book)
             # for down
-            for order_down in self.calc_down(
-                params["balance"],
-                params["last"],
-                params["baseincrement"],
-                params["priceincrement"],
-            )
+            for order_down in self.calc_down(ticket)
             for params_order_down in self.complete_margin_order(
                 side=order_down.side,
                 symbol=f"{ticket}-USDT",
@@ -1522,13 +1551,10 @@ class KCN:
         # wait while matcher and balancer would be ready
         await asyncio.sleep(10)
 
-        for ticket, params in self.book.items():
-            await self.make_twice_margin_order(
-                ticket,
-                params,
-            )
+        for ticket in self.book:
+            await self.make_updown_margin_order(ticket)
 
-            self.logger_info(f"{ticket=} {params=}")
+            self.logger_info(f"{ticket} {self.book[ticket]}")
 
         return Ok(None)
 
@@ -1539,7 +1565,7 @@ class KCN:
         """Export current balance from data."""
         for ticket in data.data:
             if ticket.currency in self.book:
-                self.book[ticket.currency]["balance"] = Decimal(ticket.balance)
+                self.book[ticket.currency].balance = Decimal(ticket.balance)
         return Ok(None)
 
     async def fill_balance(self: Self) -> Result[None, Exception]:
@@ -1563,7 +1589,7 @@ class KCN:
                 out_side_ticket.baseCurrency in self.book
                 and out_side_ticket.quoteCurrency == "USDT"
             ):
-                self.book[out_side_ticket.baseCurrency]["baseincrement"] = Decimal(
+                self.book[out_side_ticket.baseCurrency].baseincrement = Decimal(
                     out_side_ticket.baseIncrement,
                 )
         return Ok(None)
@@ -1578,7 +1604,7 @@ class KCN:
                 out_side_ticket.baseCurrency in self.book
                 and out_side_ticket.quoteCurrency == "USDT"
             ):
-                self.book[out_side_ticket.baseCurrency]["priceincrement"] = Decimal(
+                self.book[out_side_ticket.baseCurrency].priceincrement = Decimal(
                     out_side_ticket.priceIncrement,
                 )
         return Ok(None)
@@ -1600,7 +1626,7 @@ class KCN:
         for ticket in data.data.ticker:
             symbol = ticket.symbol.replace("-USDT", "")
             if symbol in self.book and isinstance(ticket.last, str):
-                self.book[symbol]["last"] = Decimal(ticket.last)
+                self.book[symbol].last_price = Decimal(ticket.last)
         return Ok(None)
 
     async def fill_last_price(self: Self) -> Result[None, Exception]:
@@ -1654,10 +1680,7 @@ class KCN:
 
     def calc_up(
         self: Self,
-        balance: Decimal,
-        last_price: Decimal,
-        baseincrement: Decimal,
-        priceincrement: Decimal,
+        ticket: str,
     ) -> Result[OrderParam, Exception]:
         """Calc up price and size tokens."""
         return do(
@@ -1668,25 +1691,28 @@ class KCN:
                     size=size_str,
                 ),
             )
-            for up_last_price in self.up_1_percent(last_price)
+            for up_last_price in self.up_1_percent(self.book[ticket].last_price)
             for need_balance in self.devide(self.BASE_KEEP, up_last_price)
             for balance_final in self.calc_up_change_balance(
-                balance,
+                self.book[ticket].balance,
                 need_balance,
-                last_price,
+                self.book[ticket].last_price,
             )
-            for up_last_price_quantize in self.quantize(up_last_price, priceincrement)
+            for up_last_price_quantize in self.quantize(
+                up_last_price,
+                self.book[ticket].priceincrement,
+            )
             for up_last_price_str in self.decimal_to_str(up_last_price_quantize)
-            for size in self.quantize((balance_final - need_balance), baseincrement)
+            for size in self.quantize(
+                (balance_final - need_balance),
+                self.book[ticket].baseincrement,
+            )
             for size_str in self.decimal_to_str(size)
         )
 
     def calc_down(
         self: Self,
-        balance: Decimal,
-        last_price: Decimal,
-        baseincrement: Decimal,
-        priceincrement: Decimal,
+        ticket: str,
     ) -> Result[OrderParam, Exception]:
         """Calc down price and size tokens."""
         return do(
@@ -1697,20 +1723,23 @@ class KCN:
                     size=size_str,
                 ),
             )
-            for down_last_price in self.down_1_percent(last_price)
+            for down_last_price in self.down_1_percent(self.book[ticket].last_price)
             for down_last_price_str in self.decimal_to_str(down_last_price)
             for need_balance in self.devide(self.BASE_KEEP, down_last_price)
             for balance_final in self.calc_down_change_balance(
-                balance,
+                self.book[ticket].balance,
                 need_balance,
-                last_price,
+                self.book[ticket].last_price,
             )
             for down_last_price_quantize in self.quantize(
                 down_last_price,
-                priceincrement,
+                self.book[ticket].priceincrement,
             )
             for down_last_price_str in self.decimal_to_str(down_last_price_quantize)
-            for size in self.quantize((need_balance - balance_final), baseincrement)
+            for size in self.quantize(
+                (need_balance - balance_final),
+                self.book[ticket].baseincrement,
+            )
             for size_str in self.decimal_to_str(size)
         )
 
@@ -1780,7 +1809,7 @@ async def main() -> Result[None, Exception]:
             pass
         case Err(exc):
             logger.exception(exc)
-            raise exc
+            return Err(exc)
     return Ok(None)
 
 
