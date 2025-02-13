@@ -1221,7 +1221,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Infinity loop for listen balance msgs."""
         while True:
-            await do_async(
+            match await do_async(
                 Ok(None)
                 for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
@@ -1230,7 +1230,11 @@ class KCN:
                     value,
                 )
                 for _ in self.event_fill_balance(data_dataclass)
-            )
+            ):
+                case Ok(None):
+                    pass
+                case Err(exc):
+                    return Err(exc)
 
     def replace_symbol_name(self: Self, data: str) -> Result[str, Exception]:
         """Replace BTC-USDT to BTC."""
@@ -1318,7 +1322,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Infinity loop for listen matching msgs."""
         while True:
-            await do_async(
+            match await do_async(
                 Ok(None)
                 for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
@@ -1327,7 +1331,11 @@ class KCN:
                     value,
                 )
                 for _ in await self.event_matching(data_dataclass)
-            )
+            ):
+                case Ok(None):
+                    pass
+                case Err(exc):
+                    return Err(exc)
 
     def export_account_usdt_from_api_v3_margin_accounts(
         self: Self,
