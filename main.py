@@ -952,14 +952,22 @@ class KCN:
     ) -> Result[None, Exception]:
         """Runtime listen websocket all time."""
         async for ws_inst in ws:
-            return await do_async(
-                Ok(None)
-                # get welcome msg
-                for _ in await self.welcome_processing_websocket(ws_inst)
-                # subscribe to topic
-                for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
-                for _ in await self.listen_balance_msg(ws_inst)
-            )
+            try:
+                await do_async(
+                    Ok(None)
+                    # get welcome msg
+                    for _ in await self.welcome_processing_websocket(ws_inst)
+                    # subscribe to topic
+                    for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
+                    for _ in await self.listen_balance_msg(ws_inst)
+                )
+            except (
+                websockets_exceptions.ConnectionClosed,
+                websockets_exceptions.ConcurrencyError,
+            ) as exc:
+                logger.exception(exc)
+                await self.send_telegram_msg("balancer websocket recconect")
+                continue
         return Ok(None)
 
     async def runtime_matching_ws(
@@ -969,14 +977,22 @@ class KCN:
     ) -> Result[None, Exception]:
         """Runtime listen websocket all time."""
         async for ws_inst in ws:
-            return await do_async(
-                Ok(None)
-                # get welcome msg
-                for _ in await self.welcome_processing_websocket(ws_inst)
-                # subscribe to topic
-                for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
-                for _ in await self.listen_matching_msg(ws_inst)
-            )
+            try:
+                await do_async(
+                    Ok(None)
+                    # get welcome msg
+                    for _ in await self.welcome_processing_websocket(ws_inst)
+                    # subscribe to topic
+                    for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
+                    for _ in await self.listen_matching_msg(ws_inst)
+                )
+            except (
+                websockets_exceptions.ConnectionClosed,
+                websockets_exceptions.ConcurrencyError,
+            ) as exc:
+                logger.exception(exc)
+                await self.send_telegram_msg("matching websocket recconect")
+                continue
         return Ok(None)
 
     async def recv_data_from_websocket(
