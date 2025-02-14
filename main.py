@@ -961,10 +961,7 @@ class KCN:
                     for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
                     for _ in await self.listen_balance_msg(ws_inst)
                 )
-            except (
-                websockets_exceptions.ConnectionClosed,
-                websockets_exceptions.ConcurrencyError,
-            ) as exc:
+            except websockets_exceptions.ConnectionClosed as exc:
                 logger.exception(exc)
                 await self.send_telegram_msg("balancer websocket recconect")
                 continue
@@ -978,18 +975,19 @@ class KCN:
         """Runtime listen websocket all time."""
         async for ws_inst in ws:
             try:
-                await do_async(
+                match await do_async(
                     Ok(None)
                     # get welcome msg
                     for _ in await self.welcome_processing_websocket(ws_inst)
                     # subscribe to topic
                     for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
                     for _ in await self.listen_matching_msg(ws_inst)
-                )
-            except (
-                websockets_exceptions.ConnectionClosed,
-                websockets_exceptions.ConcurrencyError,
-            ) as exc:
+                ):
+                    case Ok(None):
+                        continue
+                    case Err(exc):
+                        self.logger_exception(exc)
+            except websockets_exceptions.ConnectionClosed as exc:
                 logger.exception(exc)
                 await self.send_telegram_msg("matching websocket recconect")
                 continue
@@ -998,18 +996,10 @@ class KCN:
     async def recv_data_from_websocket(
         self: Self,
         ws: ClientConnection,
-    ) -> Result[str | bytes, Exception]:
+    ) -> Result[bytes | str, Exception]:
         """Universal recive data from websocket."""
-        try:
-            res = await ws.recv()
-            return Ok(res)
-
-        except (
-            websockets_exceptions.ConnectionClosed,
-            websockets_exceptions.ConcurrencyError,
-        ) as exc:
-            logger.exception(exc)
-            return Err(exc)
+        res = await ws.recv(decode=False)
+        return Ok(res)
 
     async def send_data_to_websocket(
         self: Self,
@@ -1017,16 +1007,8 @@ class KCN:
         data: bytes,
     ) -> Result[None, Exception]:
         """Universal send data to websocket."""
-        try:
-            await ws.send(data, text=True)
-            return Ok(None)
-        except (
-            websockets_exceptions.ConnectionClosed,
-            websockets_exceptions.ConcurrencyError,
-            TypeError,
-        ) as exc:
-            logger.exception(exc)
-            return Err(exc)
+        await ws.send(data, text=True)
+        return Ok(None)
 
     def logger_info[T](self: Self, data: T) -> Result[T, Exception]:
         """Info logger for Pipes."""
@@ -1302,9 +1284,6 @@ class KCN:
             # update last price
             for price_like_decimal in self.int_to_decimal(data.price)
             for _ in self.update_last_price_to_book(replaced_name, price_like_decimal)
-            # Send telegram msg
-            for msg_for_telegram in self.create_msg_for_telegram(data)
-            for _ in await self.send_telegram_msg(msg_for_telegram)
             # send data to db
             for _ in await self.insert_data_to_db(data)
             # cancel other order
@@ -1337,10 +1316,9 @@ class KCN:
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Infinity loop for listen matching msgs."""
-        while True:
+        async for msg in ws_inst.recv_streaming(decode=False):
             match await do_async(
                 Ok(None)
-                for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     OrderChangeV2.Res,
@@ -1352,6 +1330,7 @@ class KCN:
                     pass
                 case Err(exc):
                     return Err(exc)
+        return Ok(None)
 
     def export_account_usdt_from_api_v3_margin_accounts(
         self: Self,
