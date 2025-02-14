@@ -1,5 +1,5 @@
 """KCN2 trading bot for kucoin."""
-
+import uvloop
 import asyncio
 from base64 import b64encode
 from dataclasses import dataclass, field
@@ -30,7 +30,6 @@ from orjson import JSONDecodeError, JSONEncodeError, dumps, loads
 from result import Err, Ok, Result, do, do_async
 from websockets import ClientConnection, connect
 from websockets import exceptions as websockets_exceptions
-
 
 @dataclass
 class Book:
@@ -1857,4 +1856,5 @@ async def main() -> Result[None, Exception]:
 
 if __name__ == "__main__":
     """Main enter."""
+    uvloop.install()
     asyncio.run(main())
