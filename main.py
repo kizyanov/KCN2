@@ -1551,6 +1551,7 @@ class KCN:
                 price=order_up.price,
                 size=order_up.size,
             )
+            for _ in self.logger_info(params_order_up)
             for order_id in await self.post_api_v1_margin_order(params_order_up)
             for _ in self.save_order_id_sell(ticket, order_id.data.orderId)
             # for down
@@ -1567,6 +1568,7 @@ class KCN:
             case Ok(None):
                 pass
             case Err(exc):
+                await self.send_telegram_msg(f"{exc}")
                 logger.exception(exc)
         return Ok(None)
 
