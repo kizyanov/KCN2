@@ -1793,7 +1793,7 @@ class KCN:
     async def get_all_open_orders(self: Self) -> Result[list[str], Exception]:
         """."""
         open_orders: list[str] = []
-        pagesize = 10
+        pagesize = 50
         currentpage = 1
         while True:
             match await do_async(
@@ -1809,9 +1809,10 @@ class KCN:
             ):
                 case Ok(res):
                     currentpage += 1
-                    open_orders += [item.id for item in res.data.items]
-                    if res.currentPage == res.totalPage:
+                    ids = [item.id for item in res.data.items]
+                    if len(ids) == 0:
                         break
+                    open_orders += ids
                 case Err(exc):
                     return Err(exc)
         return Ok(open_orders)
