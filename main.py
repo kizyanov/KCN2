@@ -4,7 +4,7 @@ import asyncio
 from base64 import b64encode
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import ROUND_DOWN, Decimal, InvalidOperation
+from decimal import ROUND_DOWN, ROUND_UP, Decimal, InvalidOperation
 from hashlib import sha256
 from hmac import HMAC
 from hmac import new as hmac_new
@@ -31,6 +31,15 @@ from orjson import JSONDecodeError, JSONEncodeError, dumps, loads
 from result import Err, Ok, Result, do, do_async
 from websockets import ClientConnection, connect
 from websockets import exceptions as websockets_exceptions
+
+
+@dataclass
+class AlertestToken:
+    """."""
+
+    all_tokens: list[str] = field(default_factory=list[str])
+    deleted_tokens: list[str] = field(default_factory=list[str])
+    new_tokens: list[str] = field(default_factory=list[str])
 
 
 @dataclass
@@ -132,6 +141,7 @@ class ApiV2SymbolsGET:
             quoteCurrency: str = field(default="")
             baseIncrement: str = field(default="")
             priceIncrement: str = field(default="")
+            isMarginEnabled: bool = field(default=False)
 
         data: list[Data] = field(default_factory=list[Data])
         code: str = field(default="")
@@ -198,6 +208,7 @@ class ApiV3MarginAccountsGET:
                 currency: str = field(default="")
                 liability: str = field(default="")
                 available: str = field(default="")
+                debtRatio: str = field(default="")
 
             accounts: list[Account] = field(default_factory=list[Account])
 
@@ -304,6 +315,7 @@ class KCN:
 
         # all about tokens
         self.ALL_CURRENCY = self.get_list_env("ALLCURRENCY").unwrap()
+        self.IGNORECURRENCY = self.get_list_env("IGNORECURRENCY").unwrap()
         self.BASE_KEEP = Decimal(self.get_env("BASE_KEEP").unwrap())
 
         # All about tlg
@@ -406,18 +418,16 @@ class KCN:
             )
         return Ok(TelegramSendMsg.Res())
 
-    async def send_telegram_msg(self: Self, data: str) -> Result[str, Exception]:
+    async def send_telegram_msg(self: Self, data: str) -> Result[None, Exception]:
         """Send msg to telegram."""
         match await do_async(
-            Ok("checked_dict")
+            Ok(None)
             for chat_ids in self.get_chat_ids_for_telegram()
             for _ in await self.send_msg_to_each_chat_id(chat_ids, data)
         ):
-            case Ok(value):
-                return Ok(value)
             case Err(exc):
                 logger.exception(exc)
-        return Ok("Error")
+        return Ok(None)
 
     def get_env(self: Self, key: str) -> Result[str, ValueError]:
         """Just get key from EVN."""
@@ -1361,37 +1371,94 @@ class KCN:
             logger.exception(exc)
             return Err(exc)
 
-    def export_liability_usdt(
+    def compile_telegram_msg_alertest(
         self: Self,
-        data: ApiV3MarginAccountsGET.Res.Data.Account,
-    ) -> Result[Decimal, Exception]:
-        """Export liability and available USDT from api_v3_margin_accounts."""
-        return do(Ok(result) for result in self.int_to_decimal(data.liability))
+        finance: ApiV3MarginAccountsGET.Res.Data.Account,
+        tokens: AlertestToken,
+    ) -> Result[str, Exception]:
+        """."""
+        return Ok(
+            f"""<b>KuCoin</b>
+<i>KEEP</i>:{self.BASE_KEEP}
+<i>USDT</i>:{finance.available}
+<i>BORROWING USDT</i>:{finance.liability}{finance.debtRatio}%)
+<i>ALL TOKENS</i>:{len(tokens.all_tokens)}
+<i>USED TOKENS</i>({len(self.ALL_CURRENCY)})
+<i>DELETED</i>({len(tokens.deleted_tokens)}):{",".join(tokens.deleted_tokens)}
+<i>NEW</i>({len(tokens.new_tokens)}):{",".join(tokens.new_tokens)}
+<i>IGNORE</i>({len(self.IGNORECURRENCY)}):{",".join(self.IGNORECURRENCY)}""",
+        )
 
-    def export_available_usdt(
+    def parse_tokens_for_alertest(
         self: Self,
-        data: ApiV3MarginAccountsGET.Res.Data.Account,
-    ) -> Result[Decimal, Exception]:
-        """Export liability and available USDT from api_v3_margin_accounts."""
-        return do(Ok(result) for result in self.int_to_decimal(data.available))
+        data: ApiV2SymbolsGET.Res,
+    ) -> Result[AlertestToken, Exception]:
+        """."""
+        all_tokens: list[str] = [
+            exchange_token.baseCurrency
+            for exchange_token in data.data
+            if exchange_token.baseCurrency not in self.IGNORECURRENCY
+            and exchange_token.isMarginEnabled
+            and exchange_token.quoteCurrency == "USDT"
+        ]
+
+        deleted_tokens: list[str] = [
+            own_token
+            for own_token in self.ALL_CURRENCY
+            if (
+                len(
+                    [
+                        exchange_token
+                        for exchange_token in data.data
+                        if exchange_token.baseCurrency == own_token
+                        and exchange_token.isMarginEnabled
+                        and exchange_token.quoteCurrency == "USDT"
+                    ],
+                )
+                == 0
+            )
+        ]
+
+        new_tokens: list[str] = [
+            exchange_token.baseCurrency
+            for exchange_token in data.data
+            if exchange_token.baseCurrency
+            not in self.ALL_CURRENCY + self.IGNORECURRENCY
+            and exchange_token.isMarginEnabled
+            and exchange_token.quoteCurrency == "USDT"
+        ]
+
+        return Ok(
+            AlertestToken(
+                all_tokens=all_tokens,
+                deleted_tokens=deleted_tokens,
+                new_tokens=new_tokens,
+            ),
+        )
 
     async def alertest(self: Self) -> Result[None, Exception]:
         """Alert statistic."""
         logger.info("alertest")
-        await do_async(
-            Ok(f"{liability=}:{available=}")
-            for api_v3_margin_accounts in await self.get_api_v3_margin_accounts(
-                params={
-                    "quoteCurrency": "USDT",
-                },
+        while True:
+            await do_async(
+                Ok(None)
+                for api_v3_margin_accounts in await self.get_api_v3_margin_accounts(
+                    params={
+                        "quoteCurrency": "USDT",
+                    },
+                )
+                for accounts_data in self.export_account_usdt_from_api_v3_margin_accounts(
+                    api_v3_margin_accounts,
+                )
+                for ticket_info in await self.get_api_v2_symbols()
+                for parsed_ticked_info in self.parse_tokens_for_alertest(ticket_info)
+                for tlg_msg in self.compile_telegram_msg_alertest(
+                    accounts_data,
+                    parsed_ticked_info,
+                )
+                for _ in await self.send_telegram_msg(tlg_msg)
             )
-            for _ in self.logger_info(api_v3_margin_accounts)
-            for accounts_data in self.export_account_usdt_from_api_v3_margin_accounts(
-                api_v3_margin_accounts,
-            )
-            for liability in self.export_liability_usdt(accounts_data)
-            for available in self.export_available_usdt(accounts_data)
-        )
+            await asyncio.sleep(60 * 60)
         return Ok(None)
 
     async def massive_cancel_order(
@@ -1694,13 +1761,21 @@ class KCN:
             return do(Ok(result) for result in self.devide(self.BASE_KEEP, last_price))
         return Ok(balance)
 
-    def quantize(
+    def quantize_down(
         self: Self,
         data: Decimal,
         increment: Decimal,
     ) -> Result[Decimal, Exception]:
         """Quantize to down."""
         return Ok(data.quantize(increment, ROUND_DOWN))
+
+    def quantize_up(
+        self: Self,
+        data: Decimal,
+        increment: Decimal,
+    ) -> Result[Decimal, Exception]:
+        """Quantize to up."""
+        return Ok(data.quantize(increment, ROUND_UP))
 
     def calc_up(
         self: Self,
@@ -1722,12 +1797,12 @@ class KCN:
                 need_balance,
                 self.book[ticket].last_price,
             )
-            for up_last_price_quantize in self.quantize(
+            for up_last_price_quantize in self.quantize_up(
                 up_last_price,
                 self.book[ticket].priceincrement,
             )
             for up_last_price_str in self.decimal_to_str(up_last_price_quantize)
-            for size in self.quantize(
+            for size in self.quantize_up(
                 (balance_final - need_balance),
                 self.book[ticket].baseincrement,
             )
@@ -1755,12 +1830,12 @@ class KCN:
                 need_balance,
                 self.book[ticket].last_price,
             )
-            for down_last_price_quantize in self.quantize(
+            for down_last_price_quantize in self.quantize_down(
                 down_last_price,
                 self.book[ticket].priceincrement,
             )
             for down_last_price_str in self.decimal_to_str(down_last_price_quantize)
-            for size in self.quantize(
+            for size in self.quantize_down(
                 (need_balance - balance_final),
                 self.book[ticket].baseincrement,
             )
@@ -1863,6 +1938,7 @@ class KCN:
             tasks = [
                 tg.create_task(self.balancer()),
                 tg.create_task(self.matching()),
+                tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
             ]
 
