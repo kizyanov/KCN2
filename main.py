@@ -94,6 +94,7 @@ class ApiV1MarketAllTickers:
 
         data: Data = field(default_factory=Data)
         code: str = field(default="")
+        msg: str = field(default="")
 
 
 @dataclass(frozen=True)
@@ -111,6 +112,7 @@ class ApiV1MarginOrderPOST:
             orderId: str = field(default="")
 
         code: str = field(default="")
+        msg: str = field(default="")
         data: Data = field(default_factory=Data)
 
 
@@ -133,6 +135,7 @@ class ApiV2SymbolsGET:
 
         data: list[Data] = field(default_factory=list[Data])
         code: str = field(default="")
+        msg: str = field(default="")
 
 
 @dataclass(frozen=True)
@@ -144,6 +147,7 @@ class ApiV1OrdersDELETE:
         """Parse response request."""
 
         code: str = field(default="")
+        msg: str = field(default="")
 
 
 @dataclass(frozen=True)
@@ -168,6 +172,7 @@ class ApiV1OrdersGET:
 
         data: Data = field(default_factory=Data)
         code: str = field(default="")
+        msg: str = field(default="")
         currentPage: int = field(default=0)
         pageSize: int = field(default=0)
         totalNum: int = field(default=0)
@@ -198,6 +203,7 @@ class ApiV3MarginAccountsGET:
 
         data: Data = field(default_factory=Data)
         code: str = field(default="")
+        msg: str = field(default="")
 
 
 @dataclass(frozen=True)
@@ -262,6 +268,7 @@ class ApiV1BulletPrivatePOST:
 
         data: Data = field(default_factory=Data)
         code: str = field(default="")
+        msg: str = field(default="")
 
 
 @dataclass(frozen=True)
@@ -281,6 +288,7 @@ class ApiV1AccountsGET:
 
         data: list[Data] = field(default_factory=list[Data])
         code: str = field(default="")
+        msg: str = field(default="")
 
 
 class KCN:
@@ -1271,6 +1279,17 @@ class KCN:
         self.book[ticker].last_price = price
         return Ok(None)
 
+    async def wrap_cancel_order(
+        self: Self,
+        order_id: str,
+    ) -> Result[None, Exception]:
+        """."""
+        match await self.delete_api_v1_order(order_id):
+            case Err(exc):
+                logger.exception(exc)
+                return Ok(None)
+        return Ok(None)
+
     async def event_matching_filled(
         self: Self,
         data: OrderChangeV2.Res.Data,
@@ -1290,7 +1309,7 @@ class KCN:
                 replaced_name,
                 data.side,
             )
-            for _ in await self.delete_api_v1_order(get_open_order_for_cancel)
+            for _ in await self.wrap_cancel_order(get_open_order_for_cancel)
             # create new orders
             for _ in await self.make_updown_margin_order(replaced_name)
         ):
@@ -1791,9 +1810,9 @@ class KCN:
             return Err(exc)
 
     async def get_all_open_orders(self: Self) -> Result[list[str], Exception]:
-        """."""
+        """Get all open orders."""
         open_orders: list[str] = []
-        pagesize = 50
+        pagesize = 500
         currentpage = 1
         while True:
             match await do_async(
