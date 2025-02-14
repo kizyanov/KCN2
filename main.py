@@ -1,5 +1,5 @@
 """KCN2 trading bot for kucoin."""
-import uvloop
+
 import asyncio
 from base64 import b64encode
 from dataclasses import dataclass, field
@@ -14,6 +14,7 @@ from typing import Any, Self
 from urllib.parse import urljoin
 from uuid import UUID, uuid4
 
+import uvloop
 from aiohttp import ClientConnectorError, ClientSession
 from asyncpg import create_pool
 from dacite import (
@@ -30,6 +31,7 @@ from orjson import JSONDecodeError, JSONEncodeError, dumps, loads
 from result import Err, Ok, Result, do, do_async
 from websockets import ClientConnection, connect
 from websockets import exceptions as websockets_exceptions
+
 
 @dataclass
 class Book:
@@ -1213,9 +1215,10 @@ class KCN:
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Infinity loop for listen balance msgs."""
-        async for msg in ws_inst.recv_streaming(decode=False):
+        while True:
             match await do_async(
                 Ok(None)
+                for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     AccountBalanceChange.Res,
@@ -1225,7 +1228,6 @@ class KCN:
             ):
                 case Err(exc):
                     logger.exception(exc)
-        return Ok(None)
 
     def replace_symbol_name(self: Self, data: str) -> Result[str, Exception]:
         """Replace BTC-USDT to BTC."""
@@ -1309,9 +1311,10 @@ class KCN:
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Infinity loop for listen matching msgs."""
-        async for msg in ws_inst.recv_streaming(decode=False):
+        while True:
             match await do_async(
                 Ok(None)
+                for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     OrderChangeV2.Res,
@@ -1321,7 +1324,6 @@ class KCN:
             ):
                 case Err(exc):
                     logger.exception(exc)
-        return Ok(None)
 
     def export_account_usdt_from_api_v3_margin_accounts(
         self: Self,
