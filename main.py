@@ -1,5 +1,5 @@
 """KCN2 trading bot for kucoin."""
-import uvloop
+
 import asyncio
 from base64 import b64encode
 from dataclasses import dataclass, field
@@ -14,6 +14,7 @@ from typing import Any, Self
 from urllib.parse import urljoin
 from uuid import UUID, uuid4
 
+import uvloop
 from aiohttp import ClientConnectorError, ClientSession
 from asyncpg import create_pool
 from dacite import (
@@ -30,6 +31,7 @@ from orjson import JSONDecodeError, JSONEncodeError, dumps, loads
 from result import Err, Ok, Result, do, do_async
 from websockets import ClientConnection, connect
 from websockets import exceptions as websockets_exceptions
+
 
 @dataclass
 class Book:
@@ -166,6 +168,10 @@ class ApiV1OrdersGET:
 
         data: Data = field(default_factory=Data)
         code: str = field(default="")
+        currentPage: int = field(default=0)
+        pageSize: int = field(default=0)
+        totalNum: int = field(default=0)
+        totalPage: int = field(default=0)
 
 
 @dataclass(frozen=True)
@@ -1213,9 +1219,10 @@ class KCN:
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Infinity loop for listen balance msgs."""
-        async for msg in ws_inst.recv_streaming(decode=False):
+        while True:
             match await do_async(
                 Ok(None)
+                for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     AccountBalanceChange.Res,
@@ -1225,7 +1232,6 @@ class KCN:
             ):
                 case Err(exc):
                     logger.exception(exc)
-        return Ok(None)
 
     def replace_symbol_name(self: Self, data: str) -> Result[str, Exception]:
         """Replace BTC-USDT to BTC."""
@@ -1309,9 +1315,10 @@ class KCN:
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Infinity loop for listen matching msgs."""
-        async for msg in ws_inst.recv_streaming(decode=False):
+        while True:
             match await do_async(
                 Ok(None)
+                for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     OrderChangeV2.Res,
@@ -1321,7 +1328,6 @@ class KCN:
             ):
                 case Err(exc):
                     logger.exception(exc)
-        return Ok(None)
 
     def export_account_usdt_from_api_v3_margin_accounts(
         self: Self,
@@ -1377,13 +1383,6 @@ class KCN:
         for order_id in data:
             await self.delete_api_v1_order(order_id)
         return Ok(None)
-
-    def export_order_id_from_orders_list(
-        self: Self,
-        orders: ApiV1OrdersGET.Res,
-    ) -> Result[list[str], Exception]:
-        """Export id from orders list."""
-        return Ok([order.id for order in orders.data.items])
 
     def get_msg_for_subscribe_balance(
         self: Self,
@@ -1791,6 +1790,32 @@ class KCN:
         except ConnectionRefusedError as exc:
             return Err(exc)
 
+    async def get_all_open_orders(self: Self) -> Result[list[str], Exception]:
+        """."""
+        open_orders: list[str] = []
+        pagesize = 10
+        currentpage = 1
+        while True:
+            match await do_async(
+                Ok(orders_for_cancel)
+                for orders_for_cancel in await self.get_api_v1_orders(
+                    params={
+                        "status": "active",
+                        "tradeType": "MARGIN_TRADE",
+                        "pageSize": str(pagesize),
+                        "currentPage": str(currentpage),
+                    },
+                )
+            ):
+                case Ok(res):
+                    currentpage += 1
+                    open_orders += [item.id for item in res.data.items]
+                    if res.currentPage == res.totalPage:
+                        break
+                case Err(exc):
+                    return Err(exc)
+        return Ok(open_orders)
+
     async def pre_init(self: Self) -> Result[Self, Exception]:
         """Pre-init.
 
@@ -1803,16 +1828,8 @@ class KCN:
             Ok(self)
             for _ in await self.create_db_pool()
             for _ in self.create_book()
-            for orders_for_cancel in await self.get_api_v1_orders(
-                params={
-                    "status": "active",
-                    "tradeType": "MARGIN_TRADE",
-                },
-            )
-            for orders_list_str in self.export_order_id_from_orders_list(
-                orders_for_cancel,
-            )
-            for _ in await self.massive_cancel_order(orders_list_str)
+            for orders_for_cancel in await self.get_all_open_orders()
+            for _ in await self.massive_cancel_order(orders_for_cancel)
             for _ in await self.fill_balance()
             for _ in await self.fill_increment()
             for _ in await self.fill_last_price()
