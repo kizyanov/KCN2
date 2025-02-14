@@ -975,18 +975,14 @@ class KCN:
         """Runtime listen websocket all time."""
         async for ws_inst in ws:
             try:
-                match await do_async(
+                await do_async(
                     Ok(None)
                     # get welcome msg
                     for _ in await self.welcome_processing_websocket(ws_inst)
                     # subscribe to topic
                     for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
                     for _ in await self.listen_matching_msg(ws_inst)
-                ):
-                    case Ok(None):
-                        continue
-                    case Err(exc):
-                        self.logger_exception(exc)
+                )
             except websockets_exceptions.ConnectionClosed as exc:
                 logger.exception(exc)
                 await self.send_telegram_msg("matching websocket recconect")
@@ -1218,10 +1214,9 @@ class KCN:
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Infinity loop for listen balance msgs."""
-        while True:
+        async for msg in ws_inst.recv_streaming(decode=False):
             match await do_async(
                 Ok(None)
-                for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     AccountBalanceChange.Res,
@@ -1229,10 +1224,9 @@ class KCN:
                 )
                 for _ in self.event_fill_balance(data_dataclass)
             ):
-                case Ok(None):
-                    pass
                 case Err(exc):
-                    return Err(exc)
+                    logger.exception(exc)
+        return Ok(None)
 
     def replace_symbol_name(self: Self, data: str) -> Result[str, Exception]:
         """Replace BTC-USDT to BTC."""
@@ -1326,10 +1320,8 @@ class KCN:
                 )
                 for _ in await self.event_matching(data_dataclass)
             ):
-                case Ok(None):
-                    pass
                 case Err(exc):
-                    return Err(exc)
+                    logger.exception(exc)
         return Ok(None)
 
     def export_account_usdt_from_api_v3_margin_accounts(
