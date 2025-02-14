@@ -1568,6 +1568,7 @@ class KCN:
             case Ok(None):
                 pass
             case Err(exc):
+                await self.send_telegram_msg(f"{exc}")
                 logger.exception(exc)
         return Ok(None)
 
