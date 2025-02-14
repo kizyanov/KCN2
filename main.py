@@ -1381,7 +1381,7 @@ class KCN:
             f"""<b>KuCoin</b>
 <i>KEEP</i>:{self.BASE_KEEP}
 <i>USDT</i>:{finance.available}
-<i>BORROWING USDT</i>:{finance.liability}{finance.debtRatio}%)
+<i>BORROWING USDT</i>:{finance.liability}({finance.debtRatio}%))
 <i>ALL TOKENS</i>:{len(tokens.all_tokens)}
 <i>USED TOKENS</i>({len(self.ALL_CURRENCY)})
 <i>DELETED</i>({len(tokens.deleted_tokens)}):{",".join(tokens.deleted_tokens)}
