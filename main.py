@@ -208,9 +208,9 @@ class ApiV3MarginAccountsGET:
                 currency: str = field(default="")
                 liability: str = field(default="")
                 available: str = field(default="")
-                debtRatio: str = field(default="")
 
             accounts: list[Account] = field(default_factory=list[Account])
+            debtRatio: str = field(default="")
 
         data: Data = field(default_factory=Data)
         code: str = field(default="")
@@ -1375,6 +1375,7 @@ class KCN:
     def compile_telegram_msg_alertest(
         self: Self,
         finance: ApiV3MarginAccountsGET.Res.Data.Account,
+        debt_ratio: str,
         tokens: AlertestToken,
     ) -> Result[str, Exception]:
         """."""
@@ -1382,7 +1383,7 @@ class KCN:
             f"""<b>KuCoin</b>
 <i>KEEP</i>:{self.BASE_KEEP}
 <i>USDT</i>:{finance.available}
-<i>BORROWING USDT</i>:{finance.liability}({finance.debtRatio}%))
+<i>BORROWING USDT</i>:{finance.liability}   ({debt_ratio}%))
 <i>ALL TOKENS</i>:{len(tokens.all_tokens)}
 <i>USED TOKENS</i>({len(self.ALL_CURRENCY)})
 <i>DELETED</i>({len(tokens.deleted_tokens)}):{",".join(tokens.deleted_tokens)}
@@ -1437,6 +1438,12 @@ class KCN:
             ),
         )
 
+    def export_debt_ratio(
+        self: Self, data: ApiV3MarginAccountsGET.Res,
+    ) -> Result[str, Exception]:
+        """."""
+        return Ok(data.data.debtRatio)
+
     async def alertest(self: Self) -> Result[None, Exception]:
         """Alert statistic."""
         logger.info("alertest")
@@ -1448,13 +1455,15 @@ class KCN:
                         "quoteCurrency": "USDT",
                     },
                 )
-                for accounts_data in self.export_account_usdt_from_api_v3_margin_accounts(
+                for account_data in self.export_account_usdt_from_api_v3_margin_accounts(
                     api_v3_margin_accounts,
                 )
+                for debt_ratio in self.export_debt_ratio(api_v3_margin_accounts)
                 for ticket_info in await self.get_api_v2_symbols()
                 for parsed_ticked_info in self.parse_tokens_for_alertest(ticket_info)
                 for tlg_msg in self.compile_telegram_msg_alertest(
-                    accounts_data,
+                    account_data,
+                    debt_ratio,
                     parsed_ticked_info,
                 )
                 for _ in await self.send_telegram_msg(tlg_msg)
