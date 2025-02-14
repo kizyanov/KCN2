@@ -1,5 +1,5 @@
 """KCN2 trading bot for kucoin."""
-
+import uvloop
 import asyncio
 from base64 import b64encode
 from dataclasses import dataclass, field
@@ -30,7 +30,6 @@ from orjson import JSONDecodeError, JSONEncodeError, dumps, loads
 from result import Err, Ok, Result, do, do_async
 from websockets import ClientConnection, connect
 from websockets import exceptions as websockets_exceptions
-
 
 @dataclass
 class Book:
@@ -961,10 +960,7 @@ class KCN:
                     for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
                     for _ in await self.listen_balance_msg(ws_inst)
                 )
-            except (
-                websockets_exceptions.ConnectionClosed,
-                websockets_exceptions.ConcurrencyError,
-            ) as exc:
+            except websockets_exceptions.ConnectionClosed as exc:
                 logger.exception(exc)
                 await self.send_telegram_msg("balancer websocket recconect")
                 continue
@@ -986,10 +982,7 @@ class KCN:
                     for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
                     for _ in await self.listen_matching_msg(ws_inst)
                 )
-            except (
-                websockets_exceptions.ConnectionClosed,
-                websockets_exceptions.ConcurrencyError,
-            ) as exc:
+            except websockets_exceptions.ConnectionClosed as exc:
                 logger.exception(exc)
                 await self.send_telegram_msg("matching websocket recconect")
                 continue
@@ -998,18 +991,10 @@ class KCN:
     async def recv_data_from_websocket(
         self: Self,
         ws: ClientConnection,
-    ) -> Result[str | bytes, Exception]:
+    ) -> Result[bytes | str, Exception]:
         """Universal recive data from websocket."""
-        try:
-            res = await ws.recv()
-            return Ok(res)
-
-        except (
-            websockets_exceptions.ConnectionClosed,
-            websockets_exceptions.ConcurrencyError,
-        ) as exc:
-            logger.exception(exc)
-            return Err(exc)
+        res = await ws.recv(decode=False)
+        return Ok(res)
 
     async def send_data_to_websocket(
         self: Self,
@@ -1017,16 +1002,8 @@ class KCN:
         data: bytes,
     ) -> Result[None, Exception]:
         """Universal send data to websocket."""
-        try:
-            await ws.send(data, text=True)
-            return Ok(None)
-        except (
-            websockets_exceptions.ConnectionClosed,
-            websockets_exceptions.ConcurrencyError,
-            TypeError,
-        ) as exc:
-            logger.exception(exc)
-            return Err(exc)
+        await ws.send(data, text=True)
+        return Ok(None)
 
     def logger_info[T](self: Self, data: T) -> Result[T, Exception]:
         """Info logger for Pipes."""
@@ -1236,10 +1213,9 @@ class KCN:
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Infinity loop for listen balance msgs."""
-        while True:
+        async for msg in ws_inst.recv_streaming(decode=False):
             match await do_async(
                 Ok(None)
-                for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     AccountBalanceChange.Res,
@@ -1247,10 +1223,9 @@ class KCN:
                 )
                 for _ in self.event_fill_balance(data_dataclass)
             ):
-                case Ok(None):
-                    pass
                 case Err(exc):
-                    return Err(exc)
+                    logger.exception(exc)
+        return Ok(None)
 
     def replace_symbol_name(self: Self, data: str) -> Result[str, Exception]:
         """Replace BTC-USDT to BTC."""
@@ -1302,9 +1277,6 @@ class KCN:
             # update last price
             for price_like_decimal in self.int_to_decimal(data.price)
             for _ in self.update_last_price_to_book(replaced_name, price_like_decimal)
-            # Send telegram msg
-            for msg_for_telegram in self.create_msg_for_telegram(data)
-            for _ in await self.send_telegram_msg(msg_for_telegram)
             # send data to db
             for _ in await self.insert_data_to_db(data)
             # cancel other order
@@ -1337,10 +1309,9 @@ class KCN:
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Infinity loop for listen matching msgs."""
-        while True:
+        async for msg in ws_inst.recv_streaming(decode=False):
             match await do_async(
                 Ok(None)
-                for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     OrderChangeV2.Res,
@@ -1348,10 +1319,9 @@ class KCN:
                 )
                 for _ in await self.event_matching(data_dataclass)
             ):
-                case Ok(None):
-                    pass
                 case Err(exc):
-                    return Err(exc)
+                    logger.exception(exc)
+        return Ok(None)
 
     def export_account_usdt_from_api_v3_margin_accounts(
         self: Self,
@@ -1886,4 +1856,5 @@ async def main() -> Result[None, Exception]:
 
 if __name__ == "__main__":
     """Main enter."""
+    uvloop.install()
     asyncio.run(main())
