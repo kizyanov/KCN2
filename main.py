@@ -477,12 +477,12 @@ class KCN:
             "autoBorrow": True,
             "autoRepay": True,
         }
-
         """
         uri = "/api/v1/margin/order"
         method = "POST"
         return await do_async(
             Ok(result)
+            for _ in self.logger_info(f"Margin order:{data}")
             for full_url in self.get_full_url(self.BASE_URL, uri)
             for dumps_data_bytes in self.dumps_dict_to_bytes(data)
             for dumps_data_str in self.decode(dumps_data_bytes)
@@ -1050,7 +1050,7 @@ class KCN:
     async def recv_data_from_websocket(
         self: Self,
         ws: ClientConnection,
-    ) -> Result[bytes | str, Exception]:
+    ) -> Result[bytes, Exception]:
         """Universal recive data from websocket."""
         res = await ws.recv(decode=False)
         return Ok(res)
@@ -1175,7 +1175,7 @@ class KCN:
 
     def parse_bytes_to_dict(
         self: Self,
-        data: bytes | str,
+        data: bytes,
     ) -> Result[dict[str, Any], Exception]:
         """Parse bytes[json] to dict.
 
@@ -1340,6 +1340,7 @@ class KCN:
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
         """."""
+        await asyncio.sleep(1)
         # need update price
         match await do_async(
             Ok(None)
@@ -1665,7 +1666,6 @@ class KCN:
                 price=order_up.price,
                 size=order_up.size,
             )
-            for _ in self.logger_info(params_order_up)
             for order_id in await self.post_api_v1_margin_order(params_order_up)
             for _ in self.save_order_id_sell(ticket, order_id.data.orderId)
             # for down
