@@ -695,7 +695,6 @@ class KCN:
                 headers=headers,
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
-            for _ in self.logger_info(response_dict)
             for data_dataclass in self.convert_to_dataclass_from_dict(
                 ApiV1BulletPrivatePOST.Res,
                 response_dict,
@@ -754,11 +753,11 @@ class KCN:
     def get_ping_interval_for_websocket(
         self: Self,
         data: ApiV1BulletPrivatePOST.Res,
-    ) -> Result[int, Exception]:
+    ) -> Result[float, Exception]:
         """Get ping interval for websocket."""
         try:
             return do(
-                Ok(instance.pingInterval)
+                Ok(float(instance.pingInterval))
                 for instance in self.get_first_item_from_list(data.data.instanceServers)
             )
         except (KeyError, TypeError) as exc:
@@ -767,11 +766,11 @@ class KCN:
     def get_ping_timeout_for_websocket(
         self: Self,
         data: ApiV1BulletPrivatePOST.Res,
-    ) -> Result[int, Exception]:
+    ) -> Result[float, Exception]:
         """Get ping timeout for websocket."""
         try:
             return do(
-                Ok(instance.pingTimeout)
+                Ok(float(instance.pingTimeout))
                 for instance in self.get_first_item_from_list(data.data.instanceServers)
             )
         except (KeyError, TypeError) as exc:
@@ -919,8 +918,8 @@ class KCN:
     def get_websocket(
         self: Self,
         url: str,
-        ping_interval: int,
-        ping_timeout: int,
+        ping_interval: float,
+        ping_timeout: float,
     ) -> Result[connect, Exception]:
         """Get connect for working with websocket by url."""
         return Ok(
@@ -1278,6 +1277,7 @@ class KCN:
                 Ok(None)
                 for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
+                for _ in self.logger_info(value)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     AccountBalanceChange.Res,
                     value,
@@ -1386,6 +1386,7 @@ class KCN:
                 Ok(None)
                 for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
+                for _ in self.logger_info(value)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     OrderChangeV2.Res,
                     value,
