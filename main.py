@@ -1329,6 +1329,8 @@ class KCN:
         order_id: str,
     ) -> Result[None, Exception]:
         """."""
+        if order_id == "":
+            return Ok(None)
         match await self.delete_api_v1_order(order_id):
             case Err(exc):
                 logger.exception(exc)
@@ -1670,7 +1672,6 @@ class KCN:
             for _ in self.save_order_id_sell(ticket, order_id.data.orderId)
             # for down
             for order_down in self.calc_down(ticket)
-            for _ in self.logger_info(f"{order_down=}")
             for params_order_down in self.complete_margin_order(
                 side=order_down.side,
                 symbol=f"{ticket}-USDT",
