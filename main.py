@@ -1277,7 +1277,6 @@ class KCN:
                 Ok(None)
                 for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
-                for _ in self.logger_info(value)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     AccountBalanceChange.Res,
                     value,
@@ -1386,7 +1385,6 @@ class KCN:
                 Ok(None)
                 for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
-                for _ in self.logger_info(value)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     OrderChangeV2.Res,
                     value,
@@ -1661,24 +1659,32 @@ class KCN:
         match await do_async(
             Ok(None)
             # for up
+            for _ in self.logger_info(f"{self.book=}")
+            for _ in self.logger_info(f"{ticket=}")
             for order_up in self.calc_up(ticket)
+            for _ in self.logger_info(f"{order_up=}")
             for params_order_up in self.complete_margin_order(
                 side=order_up.side,
                 symbol=f"{ticket}-USDT",
                 price=order_up.price,
                 size=order_up.size,
             )
+            for _ in self.logger_info(f"{params_order_up=}")
             for order_id in await self.post_api_v1_margin_order(params_order_up)
+            for _ in self.logger_info(f"{order_id=}")
             for _ in self.save_order_id_sell(ticket, order_id.data.orderId)
             # for down
             for order_down in self.calc_down(ticket)
+            for _ in self.logger_info(f"{order_down=}")
             for params_order_down in self.complete_margin_order(
                 side=order_down.side,
                 symbol=f"{ticket}-USDT",
                 price=order_down.price,
                 size=order_down.size,
             )
+            for _ in self.logger_info(f"{params_order_down=}")
             for order_id in await self.post_api_v1_margin_order(params_order_down)
+            for _ in self.logger_info(f"{order_id=}")
             for _ in self.save_order_id_buy(ticket, order_id.data.orderId)
         ):
             case Ok(None):
@@ -1839,22 +1845,29 @@ class KCN:
                 ),
             )
             for up_last_price in self.plus_1_percent(self.book[ticket].last_price)
+            for _ in self.logger_info(f"{up_last_price=}")
             for need_balance in self.divide(self.BASE_KEEP, up_last_price)
+            for _ in self.logger_info(f"{need_balance=}")
             for balance_final in self.calc_up_change_balance(
                 self.book[ticket].balance,
                 need_balance,
                 self.book[ticket].last_price,
             )
+            for _ in self.logger_info(f"{balance_final=}")
             for up_last_price_quantize in self.quantize_plus(
                 up_last_price,
                 self.book[ticket].priceincrement,
             )
+            for _ in self.logger_info(f"{up_last_price_quantize=}")
             for up_last_price_str in self.decimal_to_str(up_last_price_quantize)
+            for _ in self.logger_info(f"{up_last_price_str=}")
             for size in self.quantize_plus(
                 (balance_final - need_balance),
                 self.book[ticket].baseincrement,
             )
+            for _ in self.logger_info(f"{size=}")
             for size_str in self.decimal_to_str(size)
+            for _ in self.logger_info(f"{size_str=}")
         )
 
     def calc_down(
@@ -1871,23 +1884,31 @@ class KCN:
                 ),
             )
             for down_last_price in self.minus_1_percent(self.book[ticket].last_price)
+            for _ in self.logger_info(f"{down_last_price=}")
             for down_last_price_str in self.decimal_to_str(down_last_price)
+            for _ in self.logger_info(f"{down_last_price_str=}")
             for need_balance in self.divide(self.BASE_KEEP, down_last_price)
+            for _ in self.logger_info(f"{need_balance=}")
             for balance_final in self.calc_down_change_balance(
                 self.book[ticket].balance,
                 need_balance,
                 self.book[ticket].last_price,
             )
+            for _ in self.logger_info(f"{balance_final=}")
             for down_last_price_quantize in self.quantize_minus(
                 down_last_price,
                 self.book[ticket].priceincrement,
             )
+            for _ in self.logger_info(f"{down_last_price_quantize=}")
             for down_last_price_str in self.decimal_to_str(down_last_price_quantize)
+            for _ in self.logger_info(f"{down_last_price_str=}")
             for size in self.quantize_minus(
                 (need_balance - balance_final),
                 self.book[ticket].baseincrement,
             )
+            for _ in self.logger_info(f"{size=}")
             for size_str in self.decimal_to_str(size)
+            for _ in self.logger_info(f"{size_str=}")
         )
 
     def plus_1_percent(self: Self, data: Decimal) -> Result[Decimal, Exception]:
