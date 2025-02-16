@@ -273,6 +273,8 @@ class ApiV1BulletPrivatePOST:
                 """."""
 
                 endpoint: str = field(default="")
+                pingInterval: int = field(default=0)
+                pingTimeout: int = field(default=0)
 
             instanceServers: list[Instance] = field(default_factory=list[Instance])
             token: str = field(default="")
@@ -475,12 +477,12 @@ class KCN:
             "autoBorrow": True,
             "autoRepay": True,
         }
-
         """
         uri = "/api/v1/margin/order"
         method = "POST"
         return await do_async(
             Ok(result)
+            for _ in self.logger_info(f"Margin order:{data}")
             for full_url in self.get_full_url(self.BASE_URL, uri)
             for dumps_data_bytes in self.dumps_dict_to_bytes(data)
             for dumps_data_str in self.decode(dumps_data_bytes)
@@ -748,6 +750,32 @@ class KCN:
             )
         )
 
+    def get_ping_interval_for_websocket(
+        self: Self,
+        data: ApiV1BulletPrivatePOST.Res,
+    ) -> Result[int, Exception]:
+        """Get ping interval for websocket."""
+        try:
+            return do(
+                Ok(instance.pingInterval)
+                for instance in self.get_first_item_from_list(data.data.instanceServers)
+            )
+        except (KeyError, TypeError) as exc:
+            return Err(Exception(f"Miss keys instanceServers in {exc} by {data}"))
+
+    def get_ping_timeout_for_websocket(
+        self: Self,
+        data: ApiV1BulletPrivatePOST.Res,
+    ) -> Result[int, Exception]:
+        """Get ping timeout for websocket."""
+        try:
+            return do(
+                Ok(instance.pingTimeout)
+                for instance in self.get_first_item_from_list(data.data.instanceServers)
+            )
+        except (KeyError, TypeError) as exc:
+            return Err(Exception(f"Miss keys instanceServers in {exc} by {data}"))
+
     def get_first_item_from_list[T](self: Self, data: list[T]) -> Result[T, Exception]:
         """Get first item from list."""
         try:
@@ -887,11 +915,18 @@ class KCN:
             logger.exception(exc)
             return Err(exc)
 
-    def get_websocket(self: Self, url: str) -> Result[connect, Exception]:
+    def get_websocket(
+        self: Self,
+        url: str,
+        ping_interval: int,
+        ping_timeout: int,
+    ) -> Result[connect, Exception]:
         """Get connect for working with websocket by url."""
         return Ok(
             connect(
-                url,
+                uri=url,
+                ping_interval=ping_interval,
+                ping_timeout=ping_timeout,
                 max_queue=1024,
             ),
         )
@@ -1015,7 +1050,7 @@ class KCN:
     async def recv_data_from_websocket(
         self: Self,
         ws: ClientConnection,
-    ) -> Result[bytes | str, Exception]:
+    ) -> Result[bytes, Exception]:
         """Universal recive data from websocket."""
         res = await ws.recv(decode=False)
         return Ok(res)
@@ -1140,7 +1175,7 @@ class KCN:
 
     def parse_bytes_to_dict(
         self: Self,
-        data: bytes | str,
+        data: bytes,
     ) -> Result[dict[str, Any], Exception]:
         """Parse bytes[json] to dict.
 
@@ -1251,7 +1286,7 @@ class KCN:
                 case Err(exc):
                     logger.exception(exc)
 
-    def replace_symbol_name(self: Self, data: str) -> Result[str, Exception]:
+    def replace_usdt_symbol_name(self: Self, data: str) -> Result[str, Exception]:
         """Replace BTC-USDT to BTC."""
         return Ok(data.replace("-USDT", ""))
 
@@ -1305,10 +1340,11 @@ class KCN:
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
         """."""
+        await asyncio.sleep(1)
         # need update price
         match await do_async(
             Ok(None)
-            for replaced_name in self.replace_symbol_name(data.symbol)
+            for replaced_name in self.replace_usdt_symbol_name(data.symbol)
             # update last price
             for price_like_decimal in self.int_to_decimal(data.price)
             for _ in self.update_last_price_to_book(replaced_name, price_like_decimal)
@@ -1438,7 +1474,8 @@ class KCN:
         )
 
     def export_debt_ratio(
-        self: Self, data: ApiV3MarginAccountsGET.Res,
+        self: Self,
+        data: ApiV3MarginAccountsGET.Res,
     ) -> Result[str, Exception]:
         """."""
         return Ok(data.data.debtRatio)
@@ -1523,10 +1560,11 @@ class KCN:
         logger.info("balancer")
         return await do_async(
             Ok(None)
-            for private_token in await self.get_api_v1_bullet_private()
-            for checked_dict in self.check_response_code(private_token)
-            for url_ws in self.get_url_for_websocket(checked_dict)
-            for ws in self.get_websocket(url_ws)
+            for bullet_private in await self.get_api_v1_bullet_private()
+            for url_ws in self.get_url_for_websocket(bullet_private)
+            for ping_interval in self.get_ping_interval_for_websocket(bullet_private)
+            for ping_timeout in self.get_ping_timeout_for_websocket(bullet_private)
+            for ws in self.get_websocket(url_ws, ping_interval, ping_timeout)
             for msg_subscribe_balance in self.get_msg_for_subscribe_balance()
             for _ in await self.runtime_balance_ws(
                 ws,
@@ -1542,10 +1580,11 @@ class KCN:
         logger.info("matching")
         return await do_async(
             Ok(None)
-            for private_token in await self.get_api_v1_bullet_private()
-            for checked_dict in self.check_response_code(private_token)
-            for url_ws in self.get_url_for_websocket(checked_dict)
-            for ws in self.get_websocket(url_ws)
+            for bullet_private in await self.get_api_v1_bullet_private()
+            for url_ws in self.get_url_for_websocket(bullet_private)
+            for ping_interval in self.get_ping_interval_for_websocket(bullet_private)
+            for ping_timeout in self.get_ping_timeout_for_websocket(bullet_private)
+            for ws in self.get_websocket(url_ws, ping_interval, ping_timeout)
             for msg_subscribe_matching in self.get_msg_for_subscribe_matching()
             for _ in await self.runtime_matching_ws(
                 ws,
@@ -1627,7 +1666,6 @@ class KCN:
                 price=order_up.price,
                 size=order_up.size,
             )
-            for _ in self.logger_info(params_order_up)
             for order_id in await self.post_api_v1_margin_order(params_order_up)
             for _ in self.save_order_id_sell(ticket, order_id.data.orderId)
             # for down
@@ -1737,16 +1775,15 @@ class KCN:
             for _ in self._fill_last_price(market_ticket)
         )
 
-    def devide(
+    def divide(
         self: Self,
         divider: Decimal,
         divisor: Decimal,
     ) -> Result[Decimal, Exception]:
         """Devide."""
-        try:
-            return Ok(divider / divisor)
-        except ZeroDivisionError as exc:
-            return Err(exc)
+        if divisor == Decimal("0"):
+            return Err(ZeroDivisionError("Divisor cannot be zero"))
+        return Ok(divider / divisor)
 
     def calc_down_change_balance(
         self: Self,
@@ -1756,7 +1793,7 @@ class KCN:
     ) -> Result[Decimal, Exception]:
         """."""
         if balance > need_balance:
-            return do(Ok(result) for result in self.devide(self.BASE_KEEP, last_price))
+            return do(Ok(result) for result in self.divide(self.BASE_KEEP, last_price))
         return Ok(balance)
 
     def calc_up_change_balance(
@@ -1767,10 +1804,10 @@ class KCN:
     ) -> Result[Decimal, Exception]:
         """."""
         if balance < need_balance:
-            return do(Ok(result) for result in self.devide(self.BASE_KEEP, last_price))
+            return do(Ok(result) for result in self.divide(self.BASE_KEEP, last_price))
         return Ok(balance)
 
-    def quantize_down(
+    def quantize_minus(
         self: Self,
         data: Decimal,
         increment: Decimal,
@@ -1778,7 +1815,7 @@ class KCN:
         """Quantize to down."""
         return Ok(data.quantize(increment, ROUND_DOWN))
 
-    def quantize_up(
+    def quantize_plus(
         self: Self,
         data: Decimal,
         increment: Decimal,
@@ -1799,19 +1836,19 @@ class KCN:
                     size=size_str,
                 ),
             )
-            for up_last_price in self.up_1_percent(self.book[ticket].last_price)
-            for need_balance in self.devide(self.BASE_KEEP, up_last_price)
+            for up_last_price in self.plus_1_percent(self.book[ticket].last_price)
+            for need_balance in self.divide(self.BASE_KEEP, up_last_price)
             for balance_final in self.calc_up_change_balance(
                 self.book[ticket].balance,
                 need_balance,
                 self.book[ticket].last_price,
             )
-            for up_last_price_quantize in self.quantize_up(
+            for up_last_price_quantize in self.quantize_plus(
                 up_last_price,
                 self.book[ticket].priceincrement,
             )
             for up_last_price_str in self.decimal_to_str(up_last_price_quantize)
-            for size in self.quantize_up(
+            for size in self.quantize_plus(
                 (balance_final - need_balance),
                 self.book[ticket].baseincrement,
             )
@@ -1831,31 +1868,37 @@ class KCN:
                     size=size_str,
                 ),
             )
-            for down_last_price in self.down_1_percent(self.book[ticket].last_price)
+            for down_last_price in self.minus_1_percent(self.book[ticket].last_price)
             for down_last_price_str in self.decimal_to_str(down_last_price)
-            for need_balance in self.devide(self.BASE_KEEP, down_last_price)
+            for need_balance in self.divide(self.BASE_KEEP, down_last_price)
             for balance_final in self.calc_down_change_balance(
                 self.book[ticket].balance,
                 need_balance,
                 self.book[ticket].last_price,
             )
-            for down_last_price_quantize in self.quantize_down(
+            for down_last_price_quantize in self.quantize_minus(
                 down_last_price,
                 self.book[ticket].priceincrement,
             )
             for down_last_price_str in self.decimal_to_str(down_last_price_quantize)
-            for size in self.quantize_down(
+            for size in self.quantize_minus(
                 (need_balance - balance_final),
                 self.book[ticket].baseincrement,
             )
             for size_str in self.decimal_to_str(size)
         )
 
-    def up_1_percent(self: Self, data: Decimal) -> Result[Decimal, Exception]:
+    def plus_1_percent(self: Self, data: Decimal) -> Result[Decimal, Exception]:
         """Current price plus 1 percent."""
-        return Ok(data * Decimal("1.01"))
+        try:
+            if data < Decimal("0"):
+                return Err(ValueError("data is negative"))
+            result = data * Decimal("1.01")
+            return Ok(result)
+        except InvalidOperation as exc:
+            return Err(exc)
 
-    def down_1_percent(self: Self, data: Decimal) -> Result[Decimal, Exception]:
+    def minus_1_percent(self: Self, data: Decimal) -> Result[Decimal, Exception]:
         """Current price minus 1 percent."""
         return Ok(data * Decimal("0.99"))
 
