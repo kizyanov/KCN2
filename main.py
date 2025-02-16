@@ -1659,19 +1659,14 @@ class KCN:
         match await do_async(
             Ok(None)
             # for up
-            for _ in self.logger_info(f"{self.book=}")
-            for _ in self.logger_info(f"{ticket=}")
             for order_up in self.calc_up(ticket)
-            for _ in self.logger_info(f"{order_up=}")
             for params_order_up in self.complete_margin_order(
                 side=order_up.side,
                 symbol=f"{ticket}-USDT",
                 price=order_up.price,
                 size=order_up.size,
             )
-            for _ in self.logger_info(f"{params_order_up=}")
             for order_id in await self.post_api_v1_margin_order(params_order_up)
-            for _ in self.logger_info(f"{order_id=}")
             for _ in self.save_order_id_sell(ticket, order_id.data.orderId)
             # for down
             for order_down in self.calc_down(ticket)
@@ -1682,9 +1677,7 @@ class KCN:
                 price=order_down.price,
                 size=order_down.size,
             )
-            for _ in self.logger_info(f"{params_order_down=}")
             for order_id in await self.post_api_v1_margin_order(params_order_down)
-            for _ in self.logger_info(f"{order_id=}")
             for _ in self.save_order_id_buy(ticket, order_id.data.orderId)
         ):
             case Ok(None):
