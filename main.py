@@ -1793,28 +1793,6 @@ class KCN:
             return Err(ZeroDivisionError("Divisor cannot be zero"))
         return Ok(divider / divisor)
 
-    def calc_down_change_balance(
-        self: Self,
-        balance: Decimal,
-        need_balance: Decimal,
-        last_price: Decimal,
-    ) -> Result[Decimal, Exception]:
-        """."""
-        if balance > need_balance:
-            return do(Ok(result) for result in self.divide(self.BASE_KEEP, last_price))
-        return Ok(balance)
-
-    def calc_up_change_balance(
-        self: Self,
-        balance: Decimal,
-        need_balance: Decimal,
-        last_price: Decimal,
-    ) -> Result[Decimal, Exception]:
-        """."""
-        if balance < need_balance:
-            return do(Ok(result) for result in self.divide(self.BASE_KEEP, last_price))
-        return Ok(balance)
-
     def quantize_minus(
         self: Self,
         data: Decimal,
@@ -1831,6 +1809,26 @@ class KCN:
         """Quantize to up."""
         return Ok(data.quantize(increment, ROUND_UP))
 
+    def calc_size(
+        self: Self,
+        balance: Decimal,
+        need_balance: Decimal,
+    ) -> Result[Decimal, Exception]:
+        """."""
+        if balance > need_balance:
+            return Ok(balance - need_balance)
+        return Ok(need_balance - balance)
+
+    def choise_side(
+        self: Self,
+        balance: Decimal,
+        need_balance: Decimal,
+    ) -> Result[str, Exception]:
+        """."""
+        if balance > need_balance:
+            return Ok("sell")
+        return Ok("buy")
+
     def calc_up(
         self: Self,
         ticket: str,
@@ -1839,35 +1837,25 @@ class KCN:
         return do(
             Ok(
                 OrderParam(
-                    side="sell",
-                    price=up_last_price_str,
+                    side=side,
+                    price=last_price_str,
                     size=size_str,
                 ),
             )
-            for up_last_price in self.plus_1_percent(self.book[ticket].last_price)
-            for _ in self.logger_info(f"{up_last_price=}")
-            for need_balance in self.divide(self.BASE_KEEP, up_last_price)
-            for _ in self.logger_info(f"{need_balance=}")
-            for balance_final in self.calc_up_change_balance(
-                self.book[ticket].balance,
-                need_balance,
-                self.book[ticket].last_price,
-            )
-            for _ in self.logger_info(f"{balance_final=}")
-            for up_last_price_quantize in self.quantize_plus(
-                up_last_price,
+            for last_price in self.plus_1_percent(self.book[ticket].last_price)
+            for need_balance in self.divide(self.BASE_KEEP, last_price)
+            for last_price_quantize in self.quantize_plus(
+                last_price,
                 self.book[ticket].priceincrement,
             )
-            for _ in self.logger_info(f"{up_last_price_quantize=}")
-            for up_last_price_str in self.decimal_to_str(up_last_price_quantize)
-            for _ in self.logger_info(f"{up_last_price_str=}")
+            for side in self.choise_side(self.book[ticket].balance, need_balance)
+            for last_price_str in self.decimal_to_str(last_price_quantize)
+            for raw_size in self.calc_size(self.book[ticket].balance, need_balance)
             for size in self.quantize_plus(
-                (balance_final - need_balance),
+                raw_size,
                 self.book[ticket].baseincrement,
             )
-            for _ in self.logger_info(f"{size=}")
             for size_str in self.decimal_to_str(size)
-            for _ in self.logger_info(f"{size_str=}")
         )
 
     def calc_down(
@@ -1878,37 +1866,25 @@ class KCN:
         return do(
             Ok(
                 OrderParam(
-                    side="buy",
-                    price=down_last_price_str,
+                    side=side,
+                    price=last_price_str,
                     size=size_str,
                 ),
             )
-            for down_last_price in self.minus_1_percent(self.book[ticket].last_price)
-            for _ in self.logger_info(f"{down_last_price=}")
-            for down_last_price_str in self.decimal_to_str(down_last_price)
-            for _ in self.logger_info(f"{down_last_price_str=}")
-            for need_balance in self.divide(self.BASE_KEEP, down_last_price)
-            for _ in self.logger_info(f"{need_balance=}")
-            for balance_final in self.calc_down_change_balance(
-                self.book[ticket].balance,
-                need_balance,
-                self.book[ticket].last_price,
-            )
-            for _ in self.logger_info(f"{balance_final=}")
-            for down_last_price_quantize in self.quantize_minus(
-                down_last_price,
+            for last_price in self.minus_1_percent(self.book[ticket].last_price)
+            for need_balance in self.divide(self.BASE_KEEP, last_price)
+            for last_price_quantize in self.quantize_minus(
+                last_price,
                 self.book[ticket].priceincrement,
             )
-            for _ in self.logger_info(f"{down_last_price_quantize=}")
-            for down_last_price_str in self.decimal_to_str(down_last_price_quantize)
-            for _ in self.logger_info(f"{down_last_price_str=}")
-            for size in self.quantize_minus(
-                (need_balance - balance_final),
+            for side in self.choise_side(self.book[ticket].balance, need_balance)
+            for last_price_str in self.decimal_to_str(last_price_quantize)
+            for raw_size in self.calc_size(self.book[ticket].balance, need_balance)
+            for size in self.quantize_plus(
+                raw_size,
                 self.book[ticket].baseincrement,
             )
-            for _ in self.logger_info(f"{size=}")
             for size_str in self.decimal_to_str(size)
-            for _ in self.logger_info(f"{size_str=}")
         )
 
     def plus_1_percent(self: Self, data: Decimal) -> Result[Decimal, Exception]:
