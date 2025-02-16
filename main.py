@@ -757,7 +757,7 @@ class KCN:
         """Get ping interval for websocket."""
         try:
             return do(
-                Ok(float(instance.pingInterval))
+                Ok(float(instance.pingInterval / 1000))
                 for instance in self.get_first_item_from_list(data.data.instanceServers)
             )
         except (KeyError, TypeError) as exc:
@@ -770,7 +770,7 @@ class KCN:
         """Get ping timeout for websocket."""
         try:
             return do(
-                Ok(float(instance.pingTimeout))
+                Ok(float(instance.pingTimeout / 1000))
                 for instance in self.get_first_item_from_list(data.data.instanceServers)
             )
         except (KeyError, TypeError) as exc:
