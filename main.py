@@ -1632,6 +1632,22 @@ class KCN:
             self.book_orders[symbol].append(order_id)
         return Ok(None)
 
+    async def wrap_post_api_v1_margin_order(
+        self: Self,
+        params_order_up: dict[str, str | bool],
+    ) -> Result[ApiV1MarginOrderPOST.Res, Exception]:
+        """."""
+        match await do_async(
+            Ok(order_id)
+            for order_id in await self.post_api_v1_margin_order(params_order_up)
+        ):
+            case Ok(order_id):
+                return Ok(order_id)
+            case Err(exc):
+                if "Invalid KC-API-TIMESTAMP" in str(exc):
+                    return self.wrap_post_api_v1_margin_order(params_order_up)
+                return Err(exc)
+
     async def make_updown_margin_order(
         self: Self,
         ticket: str,
@@ -1647,7 +1663,7 @@ class KCN:
                 price=order_up.price,
                 size=order_up.size,
             )
-            for order_id in await self.post_api_v1_margin_order(params_order_up)
+            for order_id in await self.wrap_post_api_v1_margin_order(params_order_up)
             for _ in self.save_order_id(ticket, order_id.data.orderId)
             # for down
             for order_down in self.calc_down(ticket)
@@ -1657,7 +1673,7 @@ class KCN:
                 price=order_down.price,
                 size=order_down.size,
             )
-            for order_id in await self.post_api_v1_margin_order(params_order_down)
+            for order_id in await self.wrap_post_api_v1_margin_order(params_order_down)
             for _ in self.save_order_id(ticket, order_id.data.orderId)
         ):
             case Ok(None):
