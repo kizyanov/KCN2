@@ -50,6 +50,7 @@ class Book:
     last_price: Decimal = field(default=Decimal("0"))
     baseincrement: Decimal = field(default=Decimal("0"))
     priceincrement: Decimal = field(default=Decimal("0"))
+    baseminsize: Decimal = field(default=Decimal("0"))
 
 
 @dataclass(frozen=True)
@@ -133,6 +134,7 @@ class ApiV2SymbolsGET:
             quoteCurrency: str = field(default="")
             baseIncrement: str = field(default="")
             priceIncrement: str = field(default="")
+            baseMinSize: str = field(default="")
             isMarginEnabled: bool = field(default=False)
 
         data: list[Data] = field(default_factory=list[Data])
@@ -1726,6 +1728,18 @@ class KCN:
                 )
         return Ok(None)
 
+    def _fill_min_base_increment(
+        self: Self,
+        data: ApiV2SymbolsGET.Res,
+    ) -> Result[None, Exception]:
+        """."""
+        for ticket in data.data:
+            if ticket.baseCurrency in self.book and ticket.quoteCurrency == "USDT":
+                self.book[ticket.baseCurrency].baseminsize = Decimal(
+                    ticket.baseMinSize,
+                )
+        return Ok(None)
+
     async def fill_increment(self: Self) -> Result[None, Exception]:
         """Fill increment from api."""
         return await do_async(
@@ -1733,6 +1747,7 @@ class KCN:
             for ticket_info in await self.get_api_v2_symbols()
             for _ in self._fill_base_increment(ticket_info)
             for _ in self._fill_price_increment(ticket_info)
+            for _ in self._fill_min_base_increment(ticket_info)
         )
 
     def _fill_last_price(
@@ -1800,6 +1815,16 @@ class KCN:
             return Ok("sell")
         return Ok("buy")
 
+    def add_min_base(
+        self: Self,
+        baseminsize: Decimal,
+        need_size: Decimal,
+    ) -> Result[Decimal, Exception]:
+        """."""
+        if need_size < baseminsize:
+            return Ok(need_size + baseminsize)
+        return Ok(need_size)
+
     def calc_up(
         self: Self,
         ticket: str,
@@ -1822,8 +1847,12 @@ class KCN:
             for side in self.choise_side(self.book[ticket].balance, need_balance)
             for last_price_str in self.decimal_to_str(last_price_quantize)
             for raw_size in self.calc_size(self.book[ticket].balance, need_balance)
-            for size in self.quantize_plus(
+            for raw_size_with_min_base in self.add_min_base(
+                self.book[ticket].baseminsize,
                 raw_size,
+            )
+            for size in self.quantize_plus(
+                raw_size_with_min_base,
                 self.book[ticket].baseincrement,
             )
             for size_str in self.decimal_to_str(size)
@@ -1851,8 +1880,12 @@ class KCN:
             for side in self.choise_side(self.book[ticket].balance, need_balance)
             for last_price_str in self.decimal_to_str(last_price_quantize)
             for raw_size in self.calc_size(self.book[ticket].balance, need_balance)
-            for size in self.quantize_plus(
+            for raw_size_with_min_base in self.add_min_base(
+                self.book[ticket].baseminsize,
                 raw_size,
+            )
+            for size in self.quantize_plus(
+                raw_size_with_min_base,
                 self.book[ticket].baseincrement,
             )
             for size_str in self.decimal_to_str(size)
