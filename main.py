@@ -52,14 +52,6 @@ class Book:
     priceincrement: Decimal = field(default=Decimal("0"))
 
 
-@dataclass
-class BookOrder:
-    """."""
-
-    buyorder: str = field(default="")
-    sellorder: str = field(default="")
-
-
 @dataclass(frozen=True)
 class OrderParam:
     """."""
@@ -229,6 +221,7 @@ class OrderChangeV2:
         class Data:
             """."""
 
+            orderId: str = field(default="")
             type: str = field(default="")
             symbol: str = field(default="")
             side: str = field(default="")
@@ -1240,10 +1233,8 @@ class KCN:
         self.book: dict[str, Book] = {
             ticket: Book() for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
         }
-        self.book_orders: dict[str, BookOrder] = {
-            ticket: BookOrder()
-            for ticket in self.ALL_CURRENCY
-            if isinstance(ticket, str)
+        self.book_orders: dict[str, list[str]] = {
+            ticket: [] for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
         }
         return Ok(None)
 
@@ -1290,21 +1281,17 @@ class KCN:
         """Replace BTC-USDT to BTC."""
         return Ok(data.replace("-USDT", ""))
 
-    def find_order_for_cancel(
+    def find_loses_orders(
         self: Self,
         symbol: str,
-        side: str,
-    ) -> Result[str, Exception]:
-        """."""
-        match side:
-            case "sell":
-                return Ok(self.book_orders[symbol].buyorder)
-            case "buy":
-                return Ok(self.book_orders[symbol].sellorder)
-            case _:
-                return Err(Exception("Empty side in matching"))
-
-        return Ok(self.book_orders[symbol].order_type)
+        order_id: str,
+    ) -> Result[list[str], Exception]:
+        """Find other orders not quals with order_id."""
+        if symbol in self.book_orders:
+            if order_id in self.book_orders[symbol]:
+                self.book_orders[symbol].remove(order_id)
+            return Ok(self.book_orders[symbol])
+        return Ok([""])
 
     def create_msg_for_telegram(
         self: Self,
@@ -1346,20 +1333,20 @@ class KCN:
         # need update price
         match await do_async(
             Ok(None)
-            for replaced_name in self.replace_usdt_symbol_name(data.symbol)
+            for symbol_name in self.replace_usdt_symbol_name(data.symbol)
             # update last price
             for price_like_decimal in self.int_to_decimal(data.price)
-            for _ in self.update_last_price_to_book(replaced_name, price_like_decimal)
+            for _ in self.update_last_price_to_book(symbol_name, price_like_decimal)
             # send data to db
             for _ in await self.insert_data_to_db(data)
             # cancel other order
-            for get_open_order_for_cancel in self.find_order_for_cancel(
-                replaced_name,
-                data.side,
+            for loses_orders in self.find_loses_orders(
+                symbol_name,
+                data.orderId,
             )
-            for _ in await self.wrap_cancel_order(get_open_order_for_cancel)
+            for _ in await self.massive_cancel_order(loses_orders)
             # create new orders
-            for _ in await self.make_updown_margin_order(replaced_name)
+            for _ in await self.make_updown_margin_order(symbol_name)
         ):
             case Ok(None):
                 pass
@@ -1633,24 +1620,14 @@ class KCN:
             for client_id in self.format_to_str_uuid(default_uuid4)
         )
 
-    def save_order_id_sell(
+    def save_order_id(
         self: Self,
         symbol: str,
         order_id: str,
     ) -> Result[None, Exception]:
         """."""
         if symbol in self.book:
-            self.book_orders[symbol].sellorder = order_id
-        return Ok(None)
-
-    def save_order_id_buy(
-        self: Self,
-        symbol: str,
-        order_id: str,
-    ) -> Result[None, Exception]:
-        """."""
-        if symbol in self.book:
-            self.book_orders[symbol].buyorder = order_id
+            self.book_orders[symbol].append(order_id)
         return Ok(None)
 
     async def make_updown_margin_order(
@@ -1669,7 +1646,7 @@ class KCN:
                 size=order_up.size,
             )
             for order_id in await self.post_api_v1_margin_order(params_order_up)
-            for _ in self.save_order_id_sell(ticket, order_id.data.orderId)
+            for _ in self.save_order_id(ticket, order_id.data.orderId)
             # for down
             for order_down in self.calc_down(ticket)
             for params_order_down in self.complete_margin_order(
@@ -1679,7 +1656,7 @@ class KCN:
                 size=order_down.size,
             )
             for order_id in await self.post_api_v1_margin_order(params_order_down)
-            for _ in self.save_order_id_buy(ticket, order_id.data.orderId)
+            for _ in self.save_order_id(ticket, order_id.data.orderId)
         ):
             case Ok(None):
                 pass
