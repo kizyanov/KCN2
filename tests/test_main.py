@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 from result import Ok
 
-from main import KCN
+from main import KCN, Book
 
 
 @pytest.fixture(autouse=True)
@@ -64,12 +64,12 @@ def test_replace_usdt_symbol_name(input_value: str, expected_output: str) -> Non
 @pytest.mark.parametrize(
     "input_value, expected_output",
     [
-        (Decimal("1"), Decimal("1.01")),
-        (Decimal("0.00116"), Decimal("0.0011716")),
-        (Decimal("0"), Decimal("0")),
+        (Book(last_price=Decimal("1")), Decimal("1.01")),
+        (Book(last_price=Decimal("0.00116")), Decimal("0.0011716")),
+        (Book(last_price=Decimal("0")), Decimal("0")),
     ],
 )
-def test_plus_1_percent(input_value: Decimal, expected_output: Decimal) -> None:
+def test_plus_1_percent(input_value: Book, expected_output: Decimal) -> None:
     """."""
     result = KCN().plus_1_percent(input_value)
     match result:
@@ -84,12 +84,12 @@ def test_plus_1_percent(input_value: Decimal, expected_output: Decimal) -> None:
 @pytest.mark.parametrize(
     "input_value, expected_output",
     [
-        (Decimal("1"), Decimal(".99")),
-        (Decimal("0.00116"), Decimal("0.0011484")),
-        (Decimal("0"), Decimal("0")),
+        (Book(last_price=Decimal("1")), Decimal(".99")),
+        (Book(last_price=Decimal("0.00116")), Decimal("0.0011484")),
+        (Book(last_price=Decimal("0")), Decimal("0")),
     ],
 )
-def test_minus_1_percent(input_value: Decimal, expected_output: Decimal) -> None:
+def test_minus_1_percent(input_value: Book, expected_output: Decimal) -> None:
     """."""
     result = KCN().minus_1_percent(input_value)
     match result:
@@ -128,27 +128,27 @@ def test_divide(
 @pytest.mark.parametrize(
     "data, increment, expected_output",
     [
-        (Decimal("0.110"), Decimal("0.01"), Decimal("0.11")),
-        (Decimal("0.111"), Decimal("0.01"), Decimal("0.12")),
-        (Decimal("0.112"), Decimal("0.01"), Decimal("0.12")),
-        (Decimal("0.113"), Decimal("0.01"), Decimal("0.12")),
-        (Decimal("0.114"), Decimal("0.01"), Decimal("0.12")),
-        (Decimal("0.115"), Decimal("0.01"), Decimal("0.12")),
-        (Decimal("0.116"), Decimal("0.01"), Decimal("0.12")),
-        (Decimal("0.117"), Decimal("0.01"), Decimal("0.12")),
-        (Decimal("0.118"), Decimal("0.01"), Decimal("0.12")),
-        (Decimal("0.119"), Decimal("0.01"), Decimal("0.12")),
-        (Decimal("0.120"), Decimal("0.01"), Decimal("0.12")),
-        (Decimal("0.121"), Decimal("0.01"), Decimal("0.13")),
+        (Book(priceincrement=Decimal("0.110")), Decimal("0.01"), Decimal("0.11")),
+        (Book(priceincrement=Decimal("0.111")), Decimal("0.01"), Decimal("0.12")),
+        (Book(priceincrement=Decimal("0.112")), Decimal("0.01"), Decimal("0.12")),
+        (Book(priceincrement=Decimal("0.113")), Decimal("0.01"), Decimal("0.12")),
+        (Book(priceincrement=Decimal("0.114")), Decimal("0.01"), Decimal("0.12")),
+        (Book(priceincrement=Decimal("0.115")), Decimal("0.01"), Decimal("0.12")),
+        (Book(priceincrement=Decimal("0.116")), Decimal("0.01"), Decimal("0.12")),
+        (Book(priceincrement=Decimal("0.117")), Decimal("0.01"), Decimal("0.12")),
+        (Book(priceincrement=Decimal("0.118")), Decimal("0.01"), Decimal("0.12")),
+        (Book(priceincrement=Decimal("0.119")), Decimal("0.01"), Decimal("0.12")),
+        (Book(priceincrement=Decimal("0.120")), Decimal("0.01"), Decimal("0.12")),
+        (Book(priceincrement=Decimal("0.121")), Decimal("0.01"), Decimal("0.13")),
     ],
 )
 def test_quantize_plus(
-    data: Decimal,
+    ticket: Book,
     increment: Decimal,
     expected_output: Decimal,
 ) -> None:
     """."""
-    result = KCN().quantize_plus(data, increment)
+    result = KCN().quantize_plus(ticket, increment)
     match result:
         case Ok(res):
             assert (
@@ -161,27 +161,27 @@ def test_quantize_plus(
 @pytest.mark.parametrize(
     "data, increment, expected_output",
     [
-        (Decimal("0.110"), Decimal("0.01"), Decimal("0.11")),
-        (Decimal("0.111"), Decimal("0.01"), Decimal("0.11")),
-        (Decimal("0.112"), Decimal("0.01"), Decimal("0.11")),
-        (Decimal("0.113"), Decimal("0.01"), Decimal("0.11")),
-        (Decimal("0.114"), Decimal("0.01"), Decimal("0.11")),
-        (Decimal("0.115"), Decimal("0.01"), Decimal("0.11")),
-        (Decimal("0.116"), Decimal("0.01"), Decimal("0.11")),
-        (Decimal("0.117"), Decimal("0.01"), Decimal("0.11")),
-        (Decimal("0.118"), Decimal("0.01"), Decimal("0.11")),
-        (Decimal("0.119"), Decimal("0.01"), Decimal("0.11")),
-        (Decimal("0.120"), Decimal("0.01"), Decimal("0.12")),
-        (Decimal("0.121"), Decimal("0.01"), Decimal("0.12")),
+        (Book(priceincrement=Decimal("0.110")), Decimal("0.01"), Decimal("0.11")),
+        (Book(priceincrement=Decimal("0.111")), Decimal("0.01"), Decimal("0.11")),
+        (Book(priceincrement=Decimal("0.112")), Decimal("0.01"), Decimal("0.11")),
+        (Book(priceincrement=Decimal("0.113")), Decimal("0.01"), Decimal("0.11")),
+        (Book(priceincrement=Decimal("0.114")), Decimal("0.01"), Decimal("0.11")),
+        (Book(priceincrement=Decimal("0.115")), Decimal("0.01"), Decimal("0.11")),
+        (Book(priceincrement=Decimal("0.116")), Decimal("0.01"), Decimal("0.11")),
+        (Book(priceincrement=Decimal("0.117")), Decimal("0.01"), Decimal("0.11")),
+        (Book(priceincrement=Decimal("0.118")), Decimal("0.01"), Decimal("0.11")),
+        (Book(priceincrement=Decimal("0.119")), Decimal("0.01"), Decimal("0.11")),
+        (Book(priceincrement=Decimal("0.120")), Decimal("0.01"), Decimal("0.12")),
+        (Book(priceincrement=Decimal("0.121")), Decimal("0.01"), Decimal("0.12")),
     ],
 )
 def test_quantize_minus(
-    data: Decimal,
+    ticket: Book,
     increment: Decimal,
     expected_output: Decimal,
 ) -> None:
     """."""
-    result = KCN().quantize_minus(data, increment)
+    result = KCN().quantize_minus(ticket, increment)
     match result:
         case Ok(res):
             assert (
