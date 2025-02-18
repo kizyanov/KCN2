@@ -1292,7 +1292,9 @@ class KCN:
         if symbol in self.book_orders:
             if order_id in self.book_orders[symbol]:
                 self.book_orders[symbol].remove(order_id)
-            return Ok(self.book_orders[symbol])
+            result = self.book_orders[symbol][:]
+            self.book_orders[symbol] = []
+            return Ok(result)
         return Ok([""])
 
     def create_msg_for_telegram(
