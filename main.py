@@ -1902,14 +1902,9 @@ class KCN:
                 self.book[ticket],
                 raw_size,
             )
-            for raw_size_with_min_quote in self.add_min_quote(
-                self.book[ticket],
-                last_price_quantize,
-                raw_size_with_min_base,
-            )
             for size in self.quantize_plus(
                 self.book[ticket],
-                raw_size_with_min_quote,
+                raw_size_with_min_base,
             )
             # params in str
             for last_price_str in self.decimal_to_str(last_price_quantize)
@@ -1946,14 +1941,9 @@ class KCN:
                 self.book[ticket],
                 raw_size,
             )
-            for raw_size_with_min_quote in self.add_min_quote(
-                self.book[ticket],
-                last_price_quantize,
-                raw_size_with_min_base,
-            )
             for size in self.quantize_plus(
                 self.book[ticket],
-                raw_size_with_min_quote,
+                raw_size_with_min_base,
             )
             # params in str
             for last_price_str in self.decimal_to_str(last_price_quantize)
