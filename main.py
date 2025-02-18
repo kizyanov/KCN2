@@ -1289,11 +1289,15 @@ class KCN:
         order_id: str,
     ) -> Result[list[str], Exception]:
         """Find other orders not quals with order_id."""
+        result: list[str] = []
         if symbol in self.book_orders:
-            if order_id in self.book_orders[symbol]:
-                self.book_orders[symbol].remove(order_id)
-            return Ok(self.book_orders[symbol])
-        return Ok([""])
+            for order in self.book_orders[symbol]:
+                if order == order_id:
+                    continue
+                result.append(order)
+            self.book_orders[symbol] = []
+            return Ok(result)
+        return Ok([])
 
     def create_msg_for_telegram(
         self: Self,
@@ -1311,19 +1315,6 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         self.book[ticker].last_price = price
-        return Ok(None)
-
-    async def wrap_cancel_order(
-        self: Self,
-        order_id: str,
-    ) -> Result[None, Exception]:
-        """."""
-        if order_id == "":
-            return Ok(None)
-        match await self.delete_api_v1_order(order_id):
-            case Err(exc):
-                logger.exception(exc)
-                return Ok(None)
         return Ok(None)
 
     async def event_matching_filled(
@@ -1644,8 +1635,10 @@ class KCN:
             case Ok(order_id):
                 return Ok(order_id)
             case Err(exc):
-                if "Invalid KC-API-TIMESTAMP" in str(exc):
-                    return self.wrap_post_api_v1_margin_order(params_order_up)
+                if "Invalid KC-API-TIMESTAMP" in str(
+                    exc,
+                ) or "Insufficient balance" in str(exc):
+                    return await self.wrap_post_api_v1_margin_order(params_order_up)
                 return Err(exc)
 
     async def make_updown_margin_order(
