@@ -1295,7 +1295,7 @@ class KCN:
             result = self.book_orders[symbol][:]
             self.book_orders[symbol] = []
             return Ok(result)
-        return Ok([""])
+        return Ok([])
 
     def create_msg_for_telegram(
         self: Self,
