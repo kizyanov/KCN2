@@ -51,7 +51,6 @@ class Book:
     baseincrement: Decimal = field(default=Decimal("0"))
     priceincrement: Decimal = field(default=Decimal("0"))
     baseminsize: Decimal = field(default=Decimal("0"))
-    quoteminsize: Decimal = field(default=Decimal("0.1"))
 
 
 @dataclass(frozen=True)
@@ -136,7 +135,6 @@ class ApiV2SymbolsGET:
             baseIncrement: str = field(default="")
             priceIncrement: str = field(default="")
             baseMinSize: str = field(default="")
-            quoteMinSize: str = field(default="")
             isMarginEnabled: bool = field(default=False)
 
         data: list[Data] = field(default_factory=list[Data])
@@ -1752,18 +1750,6 @@ class KCN:
                 )
         return Ok(None)
 
-    def _fill_min_quote_size(
-        self: Self,
-        data: ApiV2SymbolsGET.Res,
-    ) -> Result[None, Exception]:
-        """Fill min quote size."""
-        for ticket in data.data:
-            if ticket.baseCurrency in self.book and ticket.quoteCurrency == "USDT":
-                self.book[ticket.baseCurrency].quoteminsize = Decimal(
-                    ticket.quoteMinSize,
-                )
-        return Ok(None)
-
     async def fill_increment(self: Self) -> Result[None, Exception]:
         """Fill increment from api."""
         return await do_async(
@@ -1772,7 +1758,6 @@ class KCN:
             for _ in self._fill_base_increment(ticket_info)
             for _ in self._fill_price_increment(ticket_info)
             for _ in self._fill_min_base_size(ticket_info)
-            for _ in self._fill_min_quote_size(ticket_info)
         )
 
     def _fill_last_price(
