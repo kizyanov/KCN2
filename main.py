@@ -1642,6 +1642,7 @@ class KCN:
                 ) or "Insufficient balance" in str(exc):
                     return await self.wrap_post_api_v1_margin_order(params_order_up)
                 return Err(exc)
+        return Err(Exception("Error post_api_v1_margin_order unwrap"))
 
     async def make_updown_margin_order(
         self: Self,
@@ -1806,18 +1807,18 @@ class KCN:
     def quantize_minus(
         self: Self,
         ticket: Book,
-        data: Decimal,
+        price: Decimal,
     ) -> Result[Decimal, Exception]:
-        """Quantize to down."""
-        return Ok(data.quantize(ticket.priceincrement, ROUND_DOWN))
+        """Quantize price to down."""
+        return Ok(price.quantize(ticket.priceincrement, ROUND_DOWN))
 
     def quantize_plus(
         self: Self,
         ticket: Book,
-        data: Decimal,
+        price: Decimal,
     ) -> Result[Decimal, Exception]:
-        """Quantize to up."""
-        return Ok(data.quantize(ticket.priceincrement, ROUND_UP))
+        """Quantize price to up."""
+        return Ok(price.quantize(ticket.priceincrement, ROUND_UP))
 
     def calc_size(
         self: Self,
@@ -1947,8 +1948,8 @@ class KCN:
             )
             for raw_size_with_min_quote in self.add_min_quote(
                 self.book[ticket],
-                raw_size_with_min_base,
                 last_price_quantize,
+                raw_size_with_min_base,
             )
             for size in self.quantize_plus(
                 self.book[ticket],
