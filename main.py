@@ -1645,7 +1645,7 @@ class KCN:
                 return Ok(order_id)
             case Err(exc):
                 if "Invalid KC-API-TIMESTAMP" in str(exc):
-                    return self.wrap_post_api_v1_margin_order(params_order_up)
+                    return await self.wrap_post_api_v1_margin_order(params_order_up)
                 return Err(exc)
 
     async def make_updown_margin_order(
