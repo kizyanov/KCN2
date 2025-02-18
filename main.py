@@ -1292,7 +1292,9 @@ class KCN:
         if symbol in self.book_orders:
             if order_id in self.book_orders[symbol]:
                 self.book_orders[symbol].remove(order_id)
-            return Ok(self.book_orders[symbol])
+            result = self.book_orders[symbol][:]
+            self.book_orders[symbol] = []
+            return Ok(result)
         return Ok([""])
 
     def create_msg_for_telegram(
@@ -1644,7 +1646,9 @@ class KCN:
             case Ok(order_id):
                 return Ok(order_id)
             case Err(exc):
-                if "Invalid KC-API-TIMESTAMP" in str(exc):
+                if "Invalid KC-API-TIMESTAMP" in str(
+                    exc,
+                ) or "Insufficient balance." in str(exc):
                     return await self.wrap_post_api_v1_margin_order(params_order_up)
                 return Err(exc)
 
