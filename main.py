@@ -1,6 +1,7 @@
 """KCN2 trading bot for kucoin."""
 
 import asyncio
+import socket
 from base64 import b64encode
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -9,6 +10,7 @@ from hashlib import sha256
 from hmac import HMAC
 from hmac import new as hmac_new
 from os import environ
+from ssl import SSLError
 from time import time
 from typing import Any, Self
 from urllib.parse import urljoin
@@ -1545,6 +1547,8 @@ class KCN:
 
         Start listen websocket
         """
+        reconnect_delay = 1
+        max_reconnect_delay = 60
         while True:
             try:
                 logger.info("balancer start")
@@ -1575,15 +1579,28 @@ class KCN:
                 websockets_exceptions.ConnectionClosed,
                 TimeoutError,
                 websockets_exceptions.WebSocketException,
+                socket.gaierror,
+                ConnectionRefusedError,
+                SSLError,
+                OSError,
             ) as exc:
                 logger.exception(exc)
                 await self.send_telegram_msg("Drop balancer websocket: see logs")
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(exc)
+                await self.send_telegram_msg("Unexpected error in balancer: see logs")
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
 
     async def matching(self: Self) -> Result[None, Exception]:
         """Monitoring of matching order.
 
         Start listen websocket
         """
+        reconnect_delay = 1
+        max_reconnect_delay = 60
         while True:
             try:
                 logger.info("matching start")
@@ -1609,15 +1626,25 @@ class KCN:
                         await self.send_telegram_msg(
                             "Drop matching websocket: see logs",
                         )
-
             except (
                 ConnectionResetError,
                 websockets_exceptions.ConnectionClosed,
                 TimeoutError,
                 websockets_exceptions.WebSocketException,
+                socket.gaierror,
+                ConnectionRefusedError,
+                SSLError,
+                OSError,
             ) as exc:
                 logger.exception(exc)
                 await self.send_telegram_msg("Drop matching websocket: see logs")
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(exc)
+                await self.send_telegram_msg("Unexpected error in matching: see logs")
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
 
     def complete_margin_order(
         self: Self,
