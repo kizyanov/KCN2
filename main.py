@@ -955,7 +955,7 @@ class KCN:
 
     async def welcome_processing_websocket(
         self: Self,
-        cc: ClientConnection,
+        ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """When the connection on websocket is successfully established.
 
@@ -968,7 +968,7 @@ class KCN:
         """
         return await do_async(
             Ok(None)
-            for welcome_data_websocket in await self.recv_data_from_websocket(cc)
+            for welcome_data_websocket in await self.recv_data_from_websocket(ws_inst)
             for welcome in self.parse_bytes_to_dict(welcome_data_websocket)
             for _ in self.check_welcome_msg_from_websocket(welcome)
         )
@@ -1004,20 +1004,17 @@ class KCN:
         subsribe_msg: dict[str, str | bool],
     ) -> Result[None, Exception]:
         """Runtime listen websocket all time."""
-        async for ws_inst in ws:
-            try:
-                await do_async(
-                    Ok(None)
-                    # get welcome msg
-                    for _ in await self.welcome_processing_websocket(ws_inst)
-                    # subscribe to topic
-                    for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
-                    for _ in await self.listen_balance_msg(ws_inst)
-                )
-            except websockets_exceptions.ConnectionClosed as exc:
-                logger.exception(exc)
-                await self.send_telegram_msg("balancer websocket recconect")
-                continue
+        async with ws as ws_inst:
+            match await do_async(
+                Ok(None)
+                # get welcome msg
+                for _ in await self.welcome_processing_websocket(ws_inst)
+                # subscribe to topic
+                for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
+                for _ in await self.listen_balance_msg(ws_inst)
+            ):
+                case Err(exc):
+                    return Err(exc)
         return Ok(None)
 
     async def runtime_matching_ws(
@@ -1026,26 +1023,24 @@ class KCN:
         subsribe_msg: dict[str, str | bool],
     ) -> Result[None, Exception]:
         """Runtime listen websocket all time."""
-        async for ws_inst in ws:
-            try:
-                await do_async(
-                    Ok(None)
-                    # get welcome msg
-                    for _ in await self.welcome_processing_websocket(ws_inst)
-                    # subscribe to topic
-                    for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
-                    for _ in await self.listen_matching_msg(ws_inst)
-                )
-            except websockets_exceptions.ConnectionClosed as exc:
-                logger.exception(exc)
-                await self.send_telegram_msg("matching websocket recconect")
-                continue
+        async with ws as ws_inst:
+            match await do_async(
+                Ok(None)
+                # get welcome msg
+                for _ in await self.welcome_processing_websocket(ws_inst)
+                # subscribe to topic
+                for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
+                for _ in await self.listen_matching_msg(ws_inst)
+            ):
+                case Err(exc):
+                    return Err(exc)
+
         return Ok(None)
 
     async def recv_data_from_websocket(
         self: Self,
         ws: ClientConnection,
-    ) -> Result[bytes, Exception]:
+    ) -> Result[bytes | str, Exception]:
         """Universal recive data from websocket."""
         res = await ws.recv(decode=False)
         return Ok(res)
@@ -1170,7 +1165,7 @@ class KCN:
 
     def parse_bytes_to_dict(
         self: Self,
-        data: bytes,
+        data: bytes | str,
     ) -> Result[dict[str, Any], Exception]:
         """Parse bytes[json] to dict.
 
@@ -1265,10 +1260,9 @@ class KCN:
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Infinity loop for listen balance msgs."""
-        while True:
-            match await do_async(
+        async for msg in ws_inst:
+            match do(
                 Ok(None)
-                for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     AccountBalanceChange.Res,
@@ -1277,7 +1271,8 @@ class KCN:
                 for _ in self.event_fill_balance(data_dataclass)
             ):
                 case Err(exc):
-                    logger.exception(exc)
+                    return Err(exc)
+        return Ok(None)
 
     def replace_usdt_symbol_name(self: Self, data: str) -> Result[str, Exception]:
         """Replace BTC-USDT to BTC."""
@@ -1333,7 +1328,7 @@ class KCN:
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
         """."""
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)
         # need update price
         match await do_async(
             Ok(None)
@@ -1373,10 +1368,9 @@ class KCN:
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Infinity loop for listen matching msgs."""
-        while True:
+        async for msg in ws_inst:
             match await do_async(
                 Ok(None)
-                for msg in await self.recv_data_from_websocket(ws_inst)
                 for value in self.parse_bytes_to_dict(msg)
                 for data_dataclass in self.convert_to_dataclass_from_dict(
                     OrderChangeV2.Res,
@@ -1385,7 +1379,8 @@ class KCN:
                 for _ in await self.event_matching(data_dataclass)
             ):
                 case Err(exc):
-                    logger.exception(exc)
+                    return Err(exc)
+        return Ok(None)
 
     def export_account_usdt_from_api_v3_margin_accounts(
         self: Self,
@@ -1550,40 +1545,79 @@ class KCN:
 
         Start listen websocket
         """
-        logger.info("balancer")
-        return await do_async(
-            Ok(None)
-            for bullet_private in await self.get_api_v1_bullet_private()
-            for url_ws in self.get_url_for_websocket(bullet_private)
-            for ping_interval in self.get_ping_interval_for_websocket(bullet_private)
-            for ping_timeout in self.get_ping_timeout_for_websocket(bullet_private)
-            for ws in self.get_websocket(url_ws, ping_interval, ping_timeout)
-            for msg_subscribe_balance in self.get_msg_for_subscribe_balance()
-            for _ in await self.runtime_balance_ws(
-                ws,
-                msg_subscribe_balance,
-            )
-        )
+        while True:
+            try:
+                logger.info("balancer start")
+                match await do_async(
+                    Ok(None)
+                    for bullet_private in await self.get_api_v1_bullet_private()
+                    for url_ws in self.get_url_for_websocket(bullet_private)
+                    for ping_interval in self.get_ping_interval_for_websocket(
+                        bullet_private,
+                    )
+                    for ping_timeout in self.get_ping_timeout_for_websocket(
+                        bullet_private,
+                    )
+                    for ws in self.get_websocket(url_ws, ping_interval, ping_timeout)
+                    for msg_subscribe_balance in self.get_msg_for_subscribe_balance()
+                    for _ in await self.runtime_balance_ws(
+                        ws,
+                        msg_subscribe_balance,
+                    )
+                ):
+                    case Err(exc):
+                        logger.exception(exc)
+                        await self.send_telegram_msg(
+                            "Drop balancer websocket: see logs",
+                        )
+            except (
+                ConnectionResetError,
+                websockets_exceptions.ConnectionClosed,
+                TimeoutError,
+                websockets_exceptions.WebSocketException,
+            ) as exc:
+                logger.exception(exc)
+                await self.send_telegram_msg("Drop balancer websocket: see logs")
 
     async def matching(self: Self) -> Result[None, Exception]:
         """Monitoring of matching order.
 
         Start listen websocket
         """
-        logger.info("matching")
-        return await do_async(
-            Ok(None)
-            for bullet_private in await self.get_api_v1_bullet_private()
-            for url_ws in self.get_url_for_websocket(bullet_private)
-            for ping_interval in self.get_ping_interval_for_websocket(bullet_private)
-            for ping_timeout in self.get_ping_timeout_for_websocket(bullet_private)
-            for ws in self.get_websocket(url_ws, ping_interval, ping_timeout)
-            for msg_subscribe_matching in self.get_msg_for_subscribe_matching()
-            for _ in await self.runtime_matching_ws(
-                ws,
-                msg_subscribe_matching,
-            )
-        )
+        while True:
+            try:
+                logger.info("matching start")
+                match await do_async(
+                    Ok(None)
+                    for bullet_private in await self.get_api_v1_bullet_private()
+                    for url_ws in self.get_url_for_websocket(bullet_private)
+                    for ping_interval in self.get_ping_interval_for_websocket(
+                        bullet_private,
+                    )
+                    for ping_timeout in self.get_ping_timeout_for_websocket(
+                        bullet_private,
+                    )
+                    for ws in self.get_websocket(url_ws, ping_interval, ping_timeout)
+                    for msg_subscribe_matching in self.get_msg_for_subscribe_matching()
+                    for _ in await self.runtime_matching_ws(
+                        ws,
+                        msg_subscribe_matching,
+                    )
+                ):
+                    case Err(exc):
+                        logger.exception(exc)
+                        await self.send_telegram_msg(
+                            "Drop matching websocket: see logs",
+                        )
+
+            except (
+                ConnectionResetError,
+                websockets_exceptions.ConnectionClosed,
+                TimeoutError,
+                websockets_exceptions.WebSocketException,
+            ) as exc:
+                logger.exception(exc)
+                await self.send_telegram_msg("Drop matching websocket: see logs")
 
     def complete_margin_order(
         self: Self,
