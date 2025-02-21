@@ -1712,6 +1712,9 @@ class KCN:
                 ) or "Insufficient balance." in str(exc):
                     return await self.wrap_post_api_v1_margin_order(params_order_up)
                 return Err(exc)
+        error_msg = f"Unexpected error with post_api_v1_margin_order:{params_order_up}"
+        await self.send_telegram_msg(error_msg)
+        return Err(Exception(error_msg))
 
     async def make_updown_margin_order(
         self: Self,
