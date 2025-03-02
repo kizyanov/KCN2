@@ -46,7 +46,7 @@ class AlertestToken:
 
 @dataclass
 class Book:
-    """."""
+    """Store data for each token."""
 
     balance: Decimal = field(default=Decimal("0"))
     last_price: Decimal = field(default=Decimal("0"))
@@ -1690,7 +1690,7 @@ class KCN:
         symbol: str,
         order_id: str,
     ) -> Result[None, Exception]:
-        """."""
+        """Save order id."""
         if symbol in self.book:
             self.book_orders[symbol].append(order_id)
         return Ok(None)
@@ -1712,12 +1712,15 @@ class KCN:
                 ) or "Insufficient balance." in str(exc):
                     return await self.wrap_post_api_v1_margin_order(params_order_up)
                 return Err(exc)
+        error_msg = f"Unexpected error with post_api_v1_margin_order:{params_order_up}"
+        await self.send_telegram_msg(error_msg)
+        return Err(Exception(error_msg))
 
     async def make_updown_margin_order(
         self: Self,
         ticket: str,
     ) -> Result[None, Exception]:
-        """."""
+        """Make up and down limit order."""
         match await do_async(
             Ok(None)
             # for up
@@ -1749,7 +1752,7 @@ class KCN:
         return Ok(None)
 
     async def start_up_orders(self: Self) -> Result[None, Exception]:
-        """."""
+        """Make init orders."""
         # wait while matcher and balancer would be ready
         await asyncio.sleep(10)
 
@@ -1813,7 +1816,7 @@ class KCN:
         self: Self,
         data: ApiV2SymbolsGET.Res,
     ) -> Result[None, Exception]:
-        """."""
+        """Fill base min size for each symbol."""
         for ticket in data.data:
             if ticket.baseCurrency in self.book and ticket.quoteCurrency == "USDT":
                 self.book[ticket.baseCurrency].baseminsize = Decimal(
@@ -1881,7 +1884,7 @@ class KCN:
         balance: Decimal,
         need_balance: Decimal,
     ) -> Result[Decimal, Exception]:
-        """."""
+        """Calc size token for limit order."""
         if balance > need_balance:
             return Ok(balance - need_balance)
         return Ok(need_balance - balance)
@@ -1891,7 +1894,7 @@ class KCN:
         balance: Decimal,
         need_balance: Decimal,
     ) -> Result[str, Exception]:
-        """."""
+        """Choise sell or buy side."""
         if balance > need_balance:
             return Ok("sell")
         return Ok("buy")
@@ -1901,7 +1904,7 @@ class KCN:
         baseminsize: Decimal,
         need_size: Decimal,
     ) -> Result[Decimal, Exception]:
-        """."""
+        """Add min size for size limit order."""
         if need_size < baseminsize:
             return Ok(need_size + baseminsize)
         return Ok(need_size)
@@ -2069,7 +2072,7 @@ class KCN:
         )
 
     async def infinity_task(self: Self) -> Result[None, Exception]:
-        """."""
+        """Infinity run tasks."""
         async with asyncio.TaskGroup() as tg:
             tasks = [
                 tg.create_task(self.balancer()),
