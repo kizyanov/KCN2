@@ -1,31 +1,37 @@
-[tool.poetry]
+[project]
 name = "kcn2"
 version = "0.1.0"
-description = ""
-authors = ["''"]
+description = "KCN2"
 readme = "README.md"
+requires-python = "==3.13.2"
 package-mode = false
 
-[tool.poetry.dependencies]
-python = "3.13.2"
-result = "0.17.0"
-orjson = "3.10.15"
-aiohttp = { extras = ["speedups"], version = "3.11.12" }
-loguru = "0.7.3"
-websockets = "15.0"
-dacite = "1.9.2"
-asyncpg = "0.30.0"
-asyncpg-stubs = "0.30.0"
-uvloop = "^0.21.0"
+dependencies = [
+    "aiohttp[speedups]==3.11.13",
+    "asyncpg==0.30.0",
+    "asyncpg-stubs==0.30.0",
+    "dacite==1.9.2",
+    "loguru==0.7.3",
+    "orjson==3.10.15",
+    "result==0.17.0",
+    "websockets==15.0",
+    "uvloop==0.21.0",    
+]
 
+[dependency-groups]
+dev = [
+    "black==25.1.0",
+    "mypy==1.15.0",
+    "pytest-cov==6.0.0",
+    "ruff==0.9.9",
+    "vulture==2.14",
+]
 
+[tool.mypy]
+exclude = "tests"
 
-[tool.poetry.group.dev.dependencies]
-black = "25.1.0"
-ruff = "0.9.7"
-mypy = "1.15.0"
-vulture = "2.14"
-pytest-cov = "6.0.0"
+[tool.vulture]
+exclude = [".venv","tests"]
 
 [tool.ruff]
 lint.select = ["ALL"]
@@ -33,9 +39,3 @@ lint.ignore = ["N815", "E501"]
 lint.fixable = ["I", "COM", "D202"]
 lint.mccabe.max-complexity = 5
 lint.pydocstyle.convention = "google"
-
-target-version = "py313"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
