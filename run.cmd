@@ -1,1 +1,1 @@
-poetry run black . && poetry run ruff check . --fix && poetry run mypy . --strict && poetry run pytest . --cov-report term-missing --cov-fail-under=0 --cov=. && poetry run vulture .
+uvx black . && uvx ruff check . --fix && uvx mypy . --strict && vu run pytest . --cov-report term-missing --cov-fail-under=0 --cov=. && uv run vulture .

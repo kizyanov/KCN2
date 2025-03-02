@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Test for main file."""
 
 # ruff: noqa:  S105 S101 PT006

@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """KCN2 trading bot for kucoin."""
 
 import asyncio
@@ -18,7 +19,7 @@ from uuid import UUID, uuid4
 
 import uvloop
 from aiohttp import ClientConnectorError, ClientSession
-from asyncpg import create_pool
+from asyncpg import Pool, Record, create_pool
 from dacite import (
     ForwardReferenceError,
     MissingValueError,
@@ -179,10 +180,6 @@ class ApiV1OrdersGET:
         data: Data = field(default_factory=Data)
         code: str = field(default="")
         msg: str = field(default="")
-        currentPage: int = field(default=0)
-        pageSize: int = field(default=0)
-        totalNum: int = field(default=0)
-        totalPage: int = field(default=0)
 
 
 @dataclass(frozen=True)
@@ -1061,11 +1058,6 @@ class KCN:
         logger.info(data)
         return Ok(data)
 
-    def logger_exception[T](self: Self, data: T) -> Result[T, Exception]:
-        """Exception logger for Pipes."""
-        logger.exception(data)
-        return Ok(data)
-
     def logger_success[T](self: Self, data: T) -> Result[T, Exception]:
         """Success logger for Pipes."""
         logger.success(data)
@@ -1294,15 +1286,6 @@ class KCN:
             return Ok(result)
         return Ok([])
 
-    def create_msg_for_telegram(
-        self: Self,
-        data: OrderChangeV2.Res.Data,
-    ) -> Result[str, Exception]:
-        """Create personal telegram text."""
-        return Ok(
-            f"{data.side.upper()}:{data.symbol} by:{data.price} on {data.size} tokens",
-        )
-
     def update_last_price_to_book(
         self: Self,
         ticker: str,
@@ -1310,19 +1293,6 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         self.book[ticker].last_price = price
-        return Ok(None)
-
-    async def wrap_cancel_order(
-        self: Self,
-        order_id: str,
-    ) -> Result[None, Exception]:
-        """."""
-        if order_id == "":
-            return Ok(None)
-        match await self.delete_api_v1_order(order_id):
-            case Err(exc):
-                logger.exception(exc)
-                return Ok(None)
         return Ok(None)
 
     async def event_matching_filled(
@@ -1554,6 +1524,7 @@ class KCN:
                 logger.info("balancer start")
                 match await do_async(
                     Ok(None)
+                    for _ in await self.fill_balance()
                     for bullet_private in await self.get_api_v1_bullet_private()
                     for url_ws in self.get_url_for_websocket(bullet_private)
                     for ping_interval in self.get_ping_interval_for_websocket(
@@ -2013,7 +1984,7 @@ class KCN:
     async def create_db_pool(self: Self) -> Result[None, Exception]:
         """Create Postgresql connection pool."""
         try:
-            self.pool = await create_pool(
+            self.pool: Pool[Record] = await create_pool(  # type: ignore [assignment]
                 user=self.PG_USER,
                 password=self.PG_PASSWORD,
                 database=self.PG_DATABASE,
