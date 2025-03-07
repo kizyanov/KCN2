@@ -30,4 +30,4 @@ COPY --from=builder --chown=app:app /app /app
 
 ENV PATH="/app/.venv/bin:$PATH"
 
-ENTRYPOINT [ "python", "/app/main.py" ]
+ENTRYPOINT [ "python", "/app/src/main.py" ]

@@ -2,44 +2,12 @@
 """Test for main file."""
 
 # ruff: noqa:  S105 S101 PT006
-import os
 from decimal import Decimal
 
 import pytest
 from result import Ok
 
-from main import KCN
-
-
-@pytest.fixture(autouse=True)
-def set_env_vars():  # noqa: ANN201
-    """."""
-    env_vars = {
-        "KEY": "USDC",
-        "SECRET": "USDC",
-        "PASSPHRASE": "USDC",
-        "BASE_URL": "USDC",
-        "ALLCURRENCY": "USDC",
-        "IGNORECURRENCY": "USDC",
-        "BASE_KEEP": "1000",
-        "TELEGRAM_BOT_API_KEY": "USDC",
-        "TELEGRAM_BOT_CHAT_ID": "USDC",
-        "PG_USER": "USDC",
-        "PG_PASSWORD": "USDC",
-        "PG_DATABASE": "USDC",
-        "PG_HOST": "USDC",
-        "PG_PORT": "USDC",
-    }
-
-    # Set environment variables
-    for key, value in env_vars.items():
-        os.environ[key] = value
-
-    yield
-
-    # Clean up environment variables
-    for key in env_vars:
-        os.environ.pop(key, None)
+from src.main import KCN
 
 
 @pytest.mark.parametrize(
@@ -55,9 +23,9 @@ def test_replace_usdt_symbol_name(input_value: str, expected_output: str) -> Non
     result = KCN().replace_usdt_symbol_name(input_value)
     match result:
         case Ok(res):
-            assert (
-                res == expected_output
-            ), f"Expected '{expected_output}', but got '{res}'"
+            assert res == expected_output, (
+                f"Expected '{expected_output}', but got '{res}'"
+            )
         case _:
             pytest.fail(f"Expected Ok('{expected_output}'), but got {result}")
 
@@ -75,9 +43,9 @@ def test_plus_1_percent(input_value: Decimal, expected_output: Decimal) -> None:
     result = KCN().plus_1_percent(input_value)
     match result:
         case Ok(res):
-            assert (
-                res == expected_output
-            ), f"Expected '{expected_output}', but got '{res}'"
+            assert res == expected_output, (
+                f"Expected '{expected_output}', but got '{res}'"
+            )
         case _:
             pytest.fail(f"Expected Ok('{expected_output}'), but got {result}")
 
@@ -95,9 +63,9 @@ def test_minus_1_percent(input_value: Decimal, expected_output: Decimal) -> None
     result = KCN().minus_1_percent(input_value)
     match result:
         case Ok(res):
-            assert (
-                res == expected_output
-            ), f"Expected '{expected_output}', but got '{res}'"
+            assert res == expected_output, (
+                f"Expected '{expected_output}', but got '{res}'"
+            )
         case _:
             pytest.fail(f"Expected Ok('{expected_output}'), but got {result}")
 
@@ -119,9 +87,9 @@ def test_divide(
     result = KCN().divide(divider_input_value, divisor_input_value)
     match result:
         case Ok(res):
-            assert (
-                res == expected_output
-            ), f"Expected '{expected_output}', but got '{res}'"
+            assert res == expected_output, (
+                f"Expected '{expected_output}', but got '{res}'"
+            )
         case _:
             pytest.fail(f"Expected Ok('{expected_output}'), but got {result}")
 
@@ -152,9 +120,9 @@ def test_quantize_plus(
     result = KCN().quantize_plus(data, increment)
     match result:
         case Ok(res):
-            assert (
-                res == expected_output
-            ), f"Expected '{expected_output}', but got '{res}'"
+            assert res == expected_output, (
+                f"Expected '{expected_output}', but got '{res}'"
+            )
         case _:
             pytest.fail(f"Expected Ok('{expected_output}'), but got {result}")
 
@@ -185,8 +153,8 @@ def test_quantize_minus(
     result = KCN().quantize_minus(data, increment)
     match result:
         case Ok(res):
-            assert (
-                res == expected_output
-            ), f"Expected '{expected_output}', but got '{res}'"
+            assert res == expected_output, (
+                f"Expected '{expected_output}', but got '{res}'"
+            )
         case _:
             pytest.fail(f"Expected Ok('{expected_output}'), but got {result}")
