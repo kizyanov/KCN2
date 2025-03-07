@@ -15,7 +15,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 ADD . /app
 
 RUN uv run ruff check . && \
-    uv run black . --check && \
+    uv run ruff format . --check && \
     uv run mypy . --strict && \
     uv run vulture .
 

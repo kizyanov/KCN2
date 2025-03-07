@@ -326,6 +326,7 @@ class KCN:
         self.PG_PORT = self.get_env("PG_PORT").unwrap()
 
         logger.success("Settings are OK!")
+        return Ok(None)
 
     def convert_to_dataclass_from_dict[T](
         self: Self,
