@@ -7,12 +7,13 @@ ENV UV_PYTHON_DOWNLOADS=0 \
 
 WORKDIR /app
 
-ADD . /app
-
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --no-install-project --no-dev
+
+ADD . /app
+
 
 FROM python:3.13.2-slim-bullseye AS runtime
 
