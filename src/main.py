@@ -1248,6 +1248,8 @@ class KCN:
                 data.orderId,
             )
             for _ in await self.massive_cancel_order(loses_orders)
+            # update balance
+            for _ in await self.fill_balance()
             # create new orders
             for _ in await self.make_updown_margin_order(symbol_name)
         ):
@@ -1555,8 +1557,6 @@ class KCN:
         """Make up and down limit order."""
         match await do_async(
             Ok(None)
-            # update balance
-            for _ in await self.fill_balance()
             # for up
             for order_up in self.calc_up(ticket)
             for params_order_up in self.complete_margin_order(
@@ -1884,6 +1884,10 @@ class KCN:
                 if len(self.book_orders[ticket]) != perfect_count_orders:
                     await do_async(
                         Ok(None)
+                        # update balance
+                        for _ in await self.fill_balance()
+                        # update last price
+                        for _ in await self.fill_last_price()
                         for loses_orders in self.find_loses_orders(
                             ticket,
                             "",
