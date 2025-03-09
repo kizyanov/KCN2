@@ -53,7 +53,6 @@ class Book:
     last_price: Decimal = field(default=Decimal("0"))
     baseincrement: Decimal = field(default=Decimal("0"))
     priceincrement: Decimal = field(default=Decimal("0"))
-    baseminsize: Decimal = field(default=Decimal("0"))
 
 
 @dataclass(frozen=True)
@@ -137,7 +136,6 @@ class ApiV2SymbolsGET:
             quoteCurrency: str = field(default="")
             baseIncrement: str = field(default="")
             priceIncrement: str = field(default="")
-            baseMinSize: str = field(default="")
             isMarginEnabled: bool = field(default=False)
 
         data: list[Data] = field(default_factory=list[Data])
@@ -228,24 +226,6 @@ class OrderChangeV2:
             side: str = field(default="")
             size: str = field(default="")
             price: str = field(default="")
-
-        data: Data = field(default_factory=Data)
-
-
-@dataclass(frozen=True)
-class AccountBalanceChange:
-    """."""
-
-    @dataclass(frozen=True)
-    class Res:
-        """Parse response request."""
-
-        @dataclass(frozen=True)
-        class Data:
-            """."""
-
-            currency: str = field(default="")
-            total: str = field(default="")
 
         data: Data = field(default_factory=Data)
 
@@ -998,25 +978,6 @@ class KCN:
             for _ in self.check_ack_websocket(subsribe_msg, ack_subscribe_dict)
         )
 
-    async def runtime_balance_ws(
-        self: Self,
-        ws: connect,
-        subsribe_msg: dict[str, str | bool],
-    ) -> Result[None, Exception]:
-        """Runtime listen websocket all time."""
-        async with ws as ws_inst:
-            match await do_async(
-                Ok(None)
-                # get welcome msg
-                for _ in await self.welcome_processing_websocket(ws_inst)
-                # subscribe to topic
-                for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
-                for _ in await self.listen_balance_msg(ws_inst)
-            ):
-                case Err(exc):
-                    return Err(exc)
-        return Ok(None)
-
     async def runtime_matching_ws(
         self: Self,
         ws: connect,
@@ -1241,34 +1202,6 @@ class KCN:
         except (TypeError, InvalidOperation) as exc:
             return Err(exc)
 
-    def event_fill_balance(
-        self: Self,
-        data: AccountBalanceChange.Res,
-    ) -> Result[None, Exception]:
-        """Fill balance from event balance websocket."""
-        if data.data.currency in self.book:
-            self.book[data.data.currency].balance = Decimal(data.data.total)
-        return Ok(None)
-
-    async def listen_balance_msg(
-        self: Self,
-        ws_inst: ClientConnection,
-    ) -> Result[None, Exception]:
-        """Infinity loop for listen balance msgs."""
-        async for msg in ws_inst:
-            match do(
-                Ok(None)
-                for value in self.parse_bytes_to_dict(msg)
-                for data_dataclass in self.convert_to_dataclass_from_dict(
-                    AccountBalanceChange.Res,
-                    value,
-                )
-                for _ in self.event_fill_balance(data_dataclass)
-            ):
-                case Err(exc):
-                    return Err(exc)
-        return Ok(None)
-
     def replace_usdt_symbol_name(self: Self, data: str) -> Result[str, Exception]:
         """Replace BTC-USDT to BTC."""
         return Ok(data.replace("-USDT", ""))
@@ -1315,8 +1248,6 @@ class KCN:
                 data.orderId,
             )
             for _ in await self.massive_cancel_order(loses_orders)
-            # update balance
-            for _ in await self.fill_balance()
             # create new orders
             for _ in await self.make_updown_margin_order(symbol_name)
         ):
@@ -1477,24 +1408,6 @@ class KCN:
             await self.delete_api_v1_order(order_id)
         return Ok(None)
 
-    def get_msg_for_subscribe_balance(
-        self: Self,
-    ) -> Result[dict[str, str | bool], Exception]:
-        """Get msg for subscribe to balance kucoin."""
-        return do(
-            Ok(
-                {
-                    "id": uuid_str,
-                    "type": "subscribe",
-                    "topic": "/account/balance",
-                    "privateChannel": True,
-                    "response": True,
-                },
-            )
-            for default_uuid4 in self.get_default_uuid4()
-            for uuid_str in self.format_to_str_uuid(default_uuid4)
-        )
-
     def get_msg_for_subscribe_matching(
         self: Self,
     ) -> Result[dict[str, str | bool], Exception]:
@@ -1512,59 +1425,6 @@ class KCN:
             for default_uuid4 in self.get_default_uuid4()
             for uuid_str in self.format_to_str_uuid(default_uuid4)
         )
-
-    async def balancer(self: Self) -> Result[None, Exception]:
-        """Monitoring of balance.
-
-        Start listen websocket
-        """
-        reconnect_delay = 1
-        max_reconnect_delay = 60
-        while True:
-            try:
-                logger.info("balancer start")
-                match await do_async(
-                    Ok(None)
-                    for _ in await self.fill_balance()
-                    for bullet_private in await self.get_api_v1_bullet_private()
-                    for url_ws in self.get_url_for_websocket(bullet_private)
-                    for ping_interval in self.get_ping_interval_for_websocket(
-                        bullet_private,
-                    )
-                    for ping_timeout in self.get_ping_timeout_for_websocket(
-                        bullet_private,
-                    )
-                    for ws in self.get_websocket(url_ws, ping_interval, ping_timeout)
-                    for msg_subscribe_balance in self.get_msg_for_subscribe_balance()
-                    for _ in await self.runtime_balance_ws(
-                        ws,
-                        msg_subscribe_balance,
-                    )
-                ):
-                    case Err(exc):
-                        logger.exception(exc)
-                        await self.send_telegram_msg(
-                            "Drop balancer websocket: see logs",
-                        )
-            except (
-                ConnectionResetError,
-                websockets_exceptions.ConnectionClosed,
-                TimeoutError,
-                websockets_exceptions.WebSocketException,
-                socket.gaierror,
-                ConnectionRefusedError,
-                SSLError,
-                OSError,
-            ) as exc:
-                logger.exception(exc)
-                await self.send_telegram_msg("Drop balancer websocket: see logs")
-                await asyncio.sleep(reconnect_delay)
-                reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception(exc)
-                await self.send_telegram_msg("Unexpected error in balancer: see logs")
-                await asyncio.sleep(reconnect_delay)
-                reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
 
     async def matching(self: Self) -> Result[None, Exception]:
         """Monitoring of matching order.
@@ -1695,6 +1555,8 @@ class KCN:
         """Make up and down limit order."""
         match await do_async(
             Ok(None)
+            # update balance
+            for _ in await self.fill_balance()
             # for up
             for order_up in self.calc_up(ticket)
             for params_order_up in self.complete_margin_order(
@@ -1784,18 +1646,6 @@ class KCN:
                 )
         return Ok(None)
 
-    def _fill_min_base_increment(
-        self: Self,
-        data: ApiV2SymbolsGET.Res,
-    ) -> Result[None, Exception]:
-        """Fill base min size for each symbol."""
-        for ticket in data.data:
-            if ticket.baseCurrency in self.book and ticket.quoteCurrency == "USDT":
-                self.book[ticket.baseCurrency].baseminsize = Decimal(
-                    ticket.baseMinSize,
-                )
-        return Ok(None)
-
     async def fill_increment(self: Self) -> Result[None, Exception]:
         """Fill increment from api."""
         return await do_async(
@@ -1803,7 +1653,6 @@ class KCN:
             for ticket_info in await self.get_api_v2_symbols()
             for _ in self._fill_base_increment(ticket_info)
             for _ in self._fill_price_increment(ticket_info)
-            for _ in self._fill_min_base_increment(ticket_info)
         )
 
     def _fill_last_price(
@@ -1870,16 +1719,6 @@ class KCN:
         if balance > need_balance:
             return Ok("sell")
         return Ok("buy")
-
-    def add_min_base(
-        self: Self,
-        baseminsize: Decimal,
-        need_size: Decimal,
-    ) -> Result[Decimal, Exception]:
-        """Add min size for size limit order."""
-        if need_size < baseminsize:
-            return Ok(need_size + baseminsize)
-        return Ok(need_size)
 
     def calc_up(
         self: Self,
