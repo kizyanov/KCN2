@@ -1903,12 +1903,8 @@ class KCN:
             for side in self.choise_side(self.book[ticket].balance, need_balance)
             for last_price_str in self.decimal_to_str(last_price_quantize)
             for raw_size in self.calc_size(self.book[ticket].balance, need_balance)
-            for raw_size_with_min_base in self.add_min_base(
-                self.book[ticket].baseminsize,
-                raw_size,
-            )
             for size in self.quantize_plus(
-                raw_size_with_min_base,
+                raw_size,
                 self.book[ticket].baseincrement,
             )
             for size_str in self.decimal_to_str(size)
@@ -1936,12 +1932,8 @@ class KCN:
             for side in self.choise_side(self.book[ticket].balance, need_balance)
             for last_price_str in self.decimal_to_str(last_price_quantize)
             for raw_size in self.calc_size(self.book[ticket].balance, need_balance)
-            for raw_size_with_min_base in self.add_min_base(
-                self.book[ticket].baseminsize,
-                raw_size,
-            )
             for size in self.quantize_plus(
-                raw_size_with_min_base,
+                raw_size,
                 self.book[ticket].baseincrement,
             )
             for size_str in self.decimal_to_str(size)
