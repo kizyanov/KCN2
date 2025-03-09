@@ -2051,8 +2051,16 @@ class KCN:
         while True:
             for ticket in self.book_orders:
                 if len(self.book_orders[ticket]) != perfect_count_orders:
-                    await self.massive_cancel_order(self.book_orders[ticket])
-                    await self.make_updown_margin_order(ticket)
+                    await do_async(
+                        Ok(None)
+                        for loses_orders in self.find_loses_orders(
+                            ticket,
+                            "",
+                        )
+                        for _ in await self.massive_cancel_order(loses_orders)
+                        for _ in await self.make_updown_margin_order(ticket)
+                    )
+
             await asyncio.sleep(60)
 
     async def infinity_task(self: Self) -> Result[None, Exception]:
