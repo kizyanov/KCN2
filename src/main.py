@@ -1301,8 +1301,6 @@ class KCN:
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
         """."""
-        await asyncio.sleep(0.5)
-        # need update price
         match await do_async(
             Ok(None)
             for symbol_name in self.replace_usdt_symbol_name(data.symbol)
@@ -1317,6 +1315,8 @@ class KCN:
                 data.orderId,
             )
             for _ in await self.massive_cancel_order(loses_orders)
+            # update balance
+            for _ in await self.fill_balance()
             # create new orders
             for _ in await self.make_updown_margin_order(symbol_name)
         ):
@@ -1726,7 +1726,7 @@ class KCN:
     async def start_up_orders(self: Self) -> Result[None, Exception]:
         """Make init orders."""
         # wait while matcher and balancer would be ready
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
 
         for ticket in self.book:
             await self.make_updown_margin_order(ticket)
@@ -2044,14 +2044,25 @@ class KCN:
             for _ in await self.fill_last_price()
         )
 
+    async def reclaim_orders(self: Self) -> Result[None, Exception]:
+        """."""
+        perfect_count_orders = 2
+        await asyncio.sleep(60)
+        while True:
+            for ticket in self.book_orders:
+                if len(self.book_orders[ticket]) != perfect_count_orders:
+                    await self.massive_cancel_order(self.book_orders[ticket])
+                    await self.make_updown_margin_order(ticket)
+            await asyncio.sleep(60)
+
     async def infinity_task(self: Self) -> Result[None, Exception]:
         """Infinity run tasks."""
         async with asyncio.TaskGroup() as tg:
             tasks = [
-                tg.create_task(self.balancer()),
                 tg.create_task(self.matching()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
+                tg.create_task(self.reclaim_orders()),
             ]
 
         for task in tasks:
