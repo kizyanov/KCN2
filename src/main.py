@@ -1176,7 +1176,7 @@ class KCN:
         """Convert Decimal to str."""
         return Ok(str(data))
 
-    def int_to_decimal(self: Self, data: float | str) -> Result[Decimal, Exception]:
+    def data_to_decimal(self: Self, data: float | str) -> Result[Decimal, Exception]:
         """Convert to Decimal format."""
         try:
             return Ok(Decimal(data))
@@ -1219,7 +1219,7 @@ class KCN:
             Ok(None)
             for symbol_name in self.replace_usdt_symbol_name(data.symbol)
             # update last price
-            for price_like_decimal in self.int_to_decimal(data.price)
+            for price_like_decimal in self.data_to_decimal(data.price)
             for _ in self.update_last_price_to_book(symbol_name, price_like_decimal)
             # send data to db
             for _ in await self.insert_data_to_db(data)
@@ -1589,11 +1589,11 @@ class KCN:
     def fill_balance_to_current_token(
         self: Self,
         symbol: str,
-        balance: str,
+        balance: Decimal,
     ) -> Result[None, Exception]:
         """Fill balance current symbol."""
         if symbol in self.book:
-            self.book[symbol].balance = Decimal(balance)
+            self.book[symbol].balance = balance
         return Ok(None)
 
     def fill_balance_all_tokens(
@@ -1602,7 +1602,17 @@ class KCN:
     ) -> Result[None, Exception]:
         """Fill balance to all tokens in book."""
         for ticket in data.data:
-            self.fill_balance_to_current_token(ticket.currency, ticket.balance)
+            match do(
+                Ok(None)
+                for balance_decimal in self.data_to_decimal(ticket.balance)
+                for _ in self.fill_balance_to_current_token(
+                    ticket.currency,
+                    balance_decimal,
+                )
+            ):
+                case Err(exc):
+                    return Err(exc)
+
         return Ok(None)
 
     async def fill_balance(self: Self) -> Result[None, Exception]:
@@ -1615,44 +1625,92 @@ class KCN:
             for _ in self.fill_balance_all_tokens(balance_accounts)
         )
 
-    # nu cho jopki kak dila
-    def _fill_base_increment(
+    def fill_one_symbol_base_increment(
         self: Self,
-        data: ApiV2SymbolsGET.Res,
+        symbol: str,
+        base_increment: Decimal,
     ) -> Result[None, Exception]:
-        """Fill base increment by each token."""
-        for out_side_ticket in data.data:
-            if (
-                out_side_ticket.baseCurrency in self.book
-                and out_side_ticket.quoteCurrency == "USDT"
-            ):
-                self.book[out_side_ticket.baseCurrency].baseincrement = Decimal(
-                    out_side_ticket.baseIncrement,
-                )
+        """."""
+        try:
+            self.book[symbol].baseincrement = base_increment
+        except IndexError as exc:
+            return Err(exc)
         return Ok(None)
 
-    def _fill_price_increment(
+    # nu cho jopki kak dila
+    def fill_all_base_increment(
         self: Self,
-        data: ApiV2SymbolsGET.Res,
+        data: list[ApiV2SymbolsGET.Res.Data],
+    ) -> Result[None, Exception]:
+        """Fill base increment by each token."""
+        for ticket in data:
+            match do(
+                Ok(None)
+                for base_increment_decimal in self.data_to_decimal(ticket.baseIncrement)
+                for _ in self.fill_one_symbol_base_increment(
+                    ticket.baseCurrency,
+                    base_increment_decimal,
+                )
+            ):
+                case Err(exc):
+                    return Err(exc)
+
+        return Ok(None)
+
+    def fill_one_symbol_price_increment(
+        self: Self,
+        symbol: str,
+        price_increment: Decimal,
+    ) -> Result[None, Exception]:
+        """."""
+        try:
+            self.book[symbol].priceincrement = price_increment
+        except IndexError as exc:
+            return Err(exc)
+        return Ok(None)
+
+    def fill_all_price_increment(
+        self: Self,
+        data: list[ApiV2SymbolsGET.Res.Data],
     ) -> Result[None, Exception]:
         """Fill price increment by each token."""
-        for out_side_ticket in data.data:
-            if (
-                out_side_ticket.baseCurrency in self.book
-                and out_side_ticket.quoteCurrency == "USDT"
-            ):
-                self.book[out_side_ticket.baseCurrency].priceincrement = Decimal(
-                    out_side_ticket.priceIncrement,
+        for ticket in data:
+            match do(
+                Ok(None)
+                for price_increment_decimal in self.data_to_decimal(
+                    ticket.priceIncrement
                 )
+                for _ in self.fill_one_symbol_price_increment(
+                    ticket.baseCurrency,
+                    price_increment_decimal,
+                )
+            ):
+                case Err(exc):
+                    return Err(exc)
         return Ok(None)
+
+    def filter_ticket_by_book_increment(
+        self: Self,
+        data: ApiV2SymbolsGET.Res,
+    ) -> Result[list[ApiV2SymbolsGET.Res.Data], Exception]:
+        """."""
+        return Ok(
+            [
+                out_side_ticket
+                for out_side_ticket in data.data
+                if out_side_ticket.baseCurrency in self.book
+                and out_side_ticket.quoteCurrency == "USDT"
+            ]
+        )
 
     async def fill_increment(self: Self) -> Result[None, Exception]:
         """Fill increment from api."""
         return await do_async(
             Ok(None)
             for ticket_info in await self.get_api_v2_symbols()
-            for _ in self._fill_base_increment(ticket_info)
-            for _ in self._fill_price_increment(ticket_info)
+            for ticket_for_fill in self.filter_ticket_by_book_increment(ticket_info)
+            for _ in self.fill_all_base_increment(ticket_for_fill)
+            for _ in self.fill_all_price_increment(ticket_for_fill)
         )
 
     def _fill_last_price(
