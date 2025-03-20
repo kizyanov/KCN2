@@ -1592,16 +1592,18 @@ class KCN:
         balance: Decimal,
     ) -> Result[None, Exception]:
         """Fill balance current symbol."""
-        if symbol in self.book:
+        try:
             self.book[symbol].balance = balance
+        except IndexError as exc:
+            return Err(exc)
         return Ok(None)
 
     def fill_balance_all_tokens(
         self: Self,
-        data: ApiV1AccountsGET.Res,
+        data: list[ApiV1AccountsGET.Res.Data],
     ) -> Result[None, Exception]:
         """Fill balance to all tokens in book."""
-        for ticket in data.data:
+        for ticket in data:
             match do(
                 Ok(None)
                 for balance_decimal in self.data_to_decimal(ticket.balance)
@@ -1615,6 +1617,13 @@ class KCN:
 
         return Ok(None)
 
+    def filter_ticket_by_book_balance(
+        self: Self,
+        data: ApiV1AccountsGET.Res,
+    ) -> Result[list[ApiV1AccountsGET.Res.Data], Exception]:
+        """."""
+        return Ok([ticket for ticket in data.data if ticket.currency in self.book])
+
     async def fill_balance(self: Self) -> Result[None, Exception]:
         """Fill all balance by ENVs."""
         return await do_async(
@@ -1622,7 +1631,8 @@ class KCN:
             for balance_accounts in await self.get_api_v1_accounts(
                 params={"type": "margin"},
             )
-            for _ in self.fill_balance_all_tokens(balance_accounts)
+            for ticket_to_fill in self.filter_ticket_by_book_balance(balance_accounts)
+            for _ in self.fill_balance_all_tokens(ticket_to_fill)
         )
 
     def fill_one_symbol_base_increment(
