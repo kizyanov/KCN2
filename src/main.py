@@ -1207,7 +1207,10 @@ class KCN:
         price: Decimal,
     ) -> Result[None, Exception]:
         """."""
-        self.book[ticker].last_price = price
+        try:
+            self.book[ticker].last_price = price
+        except IndexError as exc:
+            return Err(exc)
         return Ok(None)
 
     async def event_filled(
@@ -1219,8 +1222,8 @@ class KCN:
             Ok(None)
             for symbol_name in self.replace_usdt_symbol_name(data.symbol)
             # update last price
-            for price_like_decimal in self.data_to_decimal(data.price)
-            for _ in self.update_last_price_to_book(symbol_name, price_like_decimal)
+            for price_decimal in self.data_to_decimal(data.price)
+            for _ in self.update_last_price_to_book(symbol_name, price_decimal)
             # send data to db
             for _ in await self.insert_data_to_db(data)
             # cancel other order of symbol
@@ -1233,16 +1236,23 @@ class KCN:
             for _ in await self.make_updown_margin_order(symbol_name)
         )
 
-    async def event_matching(
+    def event_matching(
         self: Self,
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
         """."""
-        return await do_async(
-            Ok(None)
-            for _ in self.replace_usdt_symbol_name(data.symbol)
-            # fill balance
-        )
+        match do(Ok(symbol) for symbol in self.replace_usdt_symbol_name(data.symbol)):
+            case Ok(symbol):
+                if symbol in self.book and data.matchSize:
+                    if data.side == "sell":
+                        # decrease token
+                        self.book[symbol].balance -= Decimal(data.matchSize)
+                        logger.success(f"Decrease balance on {data.matchSize}")
+                    else:
+                        # increase tokens
+                        self.book[symbol].balance += Decimal(data.matchSize)
+                        logger.success(f"Increase balance on {data.matchSize}")
+        return Ok(None)
 
     async def event(
         self: Self,
@@ -1255,9 +1265,7 @@ class KCN:
                     case Err(exc):
                         logger.exception(exc)
             case "match":  # partician fill order
-                match await self.event_matching(data.data):
-                    case Err(exc):
-                        logger.exception(exc)
+                self.event_matching(data.data)
         return Ok(None)
 
     async def listen_event(
@@ -1907,7 +1915,7 @@ class KCN:
                     "kucoin",
                     data.symbol,
                     data.side,
-                    data.size,
+                    data.size or "",
                     data.price,
                     datetime.now(),  # noqa: DTZ005
                 )
@@ -1996,6 +2004,33 @@ class KCN:
             for _ in await self.fill_last_price()
         )
 
+    async def sleep_to(self: Self, *, sleep_on: int = 1) -> Result[None, Exception]:
+        """."""
+        await asyncio.sleep(sleep_on)
+        return Ok(None)
+
+    def filter_balance_by_symbol(
+        self: Self,
+        symbol: str,
+        data: ApiV1AccountsGET.Res,
+    ) -> Result[ApiV1AccountsGET.Res.Data, Exception]:
+        """."""
+        for ticket in data.data:
+            if symbol == ticket.currency:
+                return Ok(ticket)
+        return Err(Exception(f"Can't find {symbol=} in {data.data}"))
+
+    def filter_last_price_by_symbol(
+        self: Self,
+        symbol: str,
+        data: ApiV1MarketAllTickers.Res,
+    ) -> Result[ApiV1MarketAllTickers.Res.Data.Ticker, Exception]:
+        """."""
+        for ticket in data.data.ticker:
+            if symbol == ticket.symbol.replace("USDT-", ""):
+                return Ok(ticket)
+        return Err(Exception(f"Can't find {symbol=} in {data.data.ticker}"))
+
     async def reclaim_orders(self: Self) -> Result[None, Exception]:
         """."""
         perfect_count_orders = 2
@@ -2005,15 +2040,41 @@ class KCN:
                 if len(self.book_orders[ticket]) != perfect_count_orders:
                     await do_async(
                         Ok(None)
-                        # update balance
-                        for _ in await self.fill_balance()
-                        # update last price
-                        for _ in await self.fill_last_price()
                         for loses_orders in self.find_loses_orders(
                             ticket,
                             "",
                         )
                         for _ in await self.massive_cancel_order(loses_orders)
+                        for _ in await self.sleep_to(sleep_on=2)
+                        # update balance
+                        for balance_accounts in await self.get_api_v1_accounts(
+                            params={"type": "margin"},
+                        )
+                        for current_symbol_balance in self.filter_balance_by_symbol(
+                            ticket,
+                            balance_accounts,
+                        )
+                        for balance_decimal in self.data_to_decimal(
+                            current_symbol_balance.balance
+                        )
+                        for _ in self.fill_balance_to_current_token(
+                            ticket,
+                            balance_decimal,
+                        )
+                        # update last price
+                        for market_ticket in await self.get_api_v1_market_all_tickers()
+                        for current_symbol_last_price in self.filter_last_price_by_symbol(
+                            ticket,
+                            market_ticket,
+                        )
+                        for last_price_decimal in self.data_to_decimal(
+                            current_symbol_last_price.last or ""
+                        )
+                        for _ in self.fill_one_ticket_last_price(
+                            current_symbol_last_price.symbol.replace("-USDT", ""),
+                            last_price_decimal,
+                        )
+                        for _ in await self.fill_last_price()
                         for _ in await self.make_updown_margin_order(ticket)
                     )
 
