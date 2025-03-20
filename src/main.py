@@ -2046,7 +2046,7 @@ class KCN:
                             "",
                         )
                         for _ in await self.massive_cancel_order(loses_orders)
-                        for _ in await self.sleep_to(sleep_on=2)
+                        for _ in await self.sleep_to(sleep_on=5)
                         # update balance
                         for balance_accounts in await self.get_api_v1_accounts(
                             params={"type": "margin"},
