@@ -91,7 +91,7 @@ class ApiV1MarketAllTickers:
                 """."""
 
                 symbol: str = field(default="")
-                last: str | None = field(default=None)
+                buy: str | None = field(default=None)
 
             ticker: list[Ticker] = field(default_factory=list[Ticker])
 
@@ -1740,7 +1740,7 @@ class KCN:
             [
                 ticket
                 for ticket in data.data.ticker
-                if ticket.symbol.replace("-USDT", "") in self.book and ticket.last
+                if ticket.symbol.replace("-USDT", "") in self.book and ticket.buy
             ]
         )
 
@@ -1764,7 +1764,7 @@ class KCN:
         for ticket in data:
             match do(
                 Ok(None)
-                for last_price_decimal in self.data_to_decimal(ticket.last or "")
+                for last_price_decimal in self.data_to_decimal(ticket.buy or "")
                 for replaced_symbol in self.replace_quote_in_symbol_name(ticket.symbol)
                 for _ in self.fill_one_ticket_last_price(
                     replaced_symbol,
@@ -2076,7 +2076,7 @@ class KCN:
                             market_ticket,
                         )
                         for last_price_decimal in self.data_to_decimal(
-                            current_symbol_last_price.last or ""
+                            current_symbol_last_price.buy or ""
                         )
                         for replased_symbol in self.replace_quote_in_symbol_name(
                             current_symbol_last_price.symbol
