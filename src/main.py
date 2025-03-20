@@ -1999,6 +1999,7 @@ class KCN:
             for open_orders in await self.get_all_open_orders()
             for orders_for_cancel in self.filter_open_order_by_symbol(open_orders)
             for _ in await self.massive_cancel_order(orders_for_cancel)
+            for _ in await self.sleep_to(5)
             for _ in await self.fill_balance()
             for _ in await self.fill_increment()
             for _ in await self.fill_last_price()
