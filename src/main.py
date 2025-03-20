@@ -1723,15 +1723,48 @@ class KCN:
             for _ in self.fill_all_price_increment(ticket_for_fill)
         )
 
-    def _fill_last_price(
+    def filter_ticket_by_book_last_price(
         self: Self,
         data: ApiV1MarketAllTickers.Res,
+    ) -> Result[list[ApiV1MarketAllTickers.Res.Data.Ticker], Exception]:
+        """."""
+        return Ok(
+            [
+                ticket
+                for ticket in data.data.ticker
+                if ticket.symbol.replace("-USDT", "") in self.book and ticket.last
+            ]
+        )
+
+    def fill_one_ticket_last_price(
+        self: Self,
+        symbol: str,
+        last_price: Decimal,
+    ) -> Result[None, Exception]:
+        """."""
+        try:
+            self.book[symbol].last_price = last_price
+        except IndexError as exc:
+            return Err(exc)
+        return Ok(None)
+
+    def fill_all_last_price(
+        self: Self,
+        data: list[ApiV1MarketAllTickers.Res.Data.Ticker],
     ) -> Result[None, Exception]:
         """Fill last price for each token."""
-        for ticket in data.data.ticker:
-            symbol = ticket.symbol.replace("-USDT", "")
-            if symbol in self.book and isinstance(ticket.last, str):
-                self.book[symbol].last_price = Decimal(ticket.last)
+        for ticket in data:
+            match do(
+                Ok(None)
+                for last_price_decimal in self.data_to_decimal(ticket.last or "")
+                for _ in self.fill_one_ticket_last_price(
+                    ticket.symbol.replace("-USDT", ""),
+                    last_price_decimal,
+                )
+            ):
+                case Err(exc):
+                    return Err(exc)
+
         return Ok(None)
 
     async def fill_last_price(self: Self) -> Result[None, Exception]:
@@ -1739,7 +1772,8 @@ class KCN:
         return await do_async(
             Ok(None)
             for market_ticket in await self.get_api_v1_market_all_tickers()
-            for _ in self._fill_last_price(market_ticket)
+            for ticket_for_fill in self.filter_ticket_by_book_last_price(market_ticket)
+            for _ in self.fill_all_last_price(ticket_for_fill)
         )
 
     def divide(
