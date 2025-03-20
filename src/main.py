@@ -17,7 +17,6 @@ from typing import Any, Self
 from urllib.parse import urljoin
 from uuid import UUID, uuid4
 
-import uvloop
 from aiohttp import ClientConnectorError, ClientSession
 from asyncpg import Pool, Record, create_pool
 from dacite import (
@@ -172,6 +171,7 @@ class ApiV1OrdersGET:
                 """."""
 
                 id: str = field(default="")
+                symbol: str = field(default="")
 
             items: list[Item] = field(default_factory=list[Item])
 
@@ -1816,7 +1816,7 @@ class KCN:
     async def create_db_pool(self: Self) -> Result[None, Exception]:
         """Create Postgresql connection pool."""
         try:
-            self.pool: Pool[Record] = await create_pool(  # type: ignore [assignment]
+            self.pool: Pool[Record] = await create_pool(
                 user=self.PG_USER,
                 password=self.PG_PASSWORD,
                 database=self.PG_DATABASE,
@@ -1828,9 +1828,11 @@ class KCN:
         except ConnectionRefusedError as exc:
             return Err(exc)
 
-    async def get_all_open_orders(self: Self) -> Result[list[str], Exception]:
+    async def get_all_open_orders(
+        self: Self,
+    ) -> Result[list[ApiV1OrdersGET.Res.Data.Item], Exception]:
         """Get all open orders."""
-        open_orders: list[str] = []
+        open_orders: list[ApiV1OrdersGET.Res.Data.Item] = []
         pagesize = 500
         currentpage = 1
         while True:
@@ -1846,14 +1848,21 @@ class KCN:
                 )
             ):
                 case Ok(res):
-                    currentpage += 1
-                    ids = [item.id for item in res.data.items]
-                    if len(ids) == 0:
+                    if len(res.data.items) == 0:
                         break
-                    open_orders += ids
+
+                    currentpage += 1
+                    open_orders += res.data.items
                 case Err(exc):
                     return Err(exc)
         return Ok(open_orders)
+
+    def filter_open_order_by_symbol(
+        self: Self,
+        data: list[ApiV1OrdersGET.Res.Data.Item],
+    ) -> Result[list[str], Exception]:
+        """Filted open order by exist in book."""
+        return Ok([order.id for order in data if order.symbol in self.book])
 
     async def pre_init(self: Self) -> Result[Self, Exception]:
         """Pre-init.
@@ -1868,7 +1877,8 @@ class KCN:
             for _ in self.init_envs()
             for _ in await self.create_db_pool()
             for _ in self.create_book()
-            for orders_for_cancel in await self.get_all_open_orders()
+            for open_orders in await self.get_all_open_orders()
+            for orders_for_cancel in self.filter_open_order_by_symbol(open_orders)
             for _ in await self.massive_cancel_order(orders_for_cancel)
             for _ in await self.fill_balance()
             for _ in await self.fill_increment()
@@ -1937,5 +1947,4 @@ async def main() -> Result[None, Exception]:
 
 if __name__ == "__main__":
     """Main enter."""
-    uvloop.install()
     asyncio.run(main())
