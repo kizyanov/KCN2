@@ -1765,8 +1765,9 @@ class KCN:
             match do(
                 Ok(None)
                 for last_price_decimal in self.data_to_decimal(ticket.last or "")
+                for replaced_symbol in self.replace_usdt_symbol_name(ticket.symbol)
                 for _ in self.fill_one_ticket_last_price(
-                    ticket.symbol.replace("-USDT", ""),
+                    replaced_symbol,
                     last_price_decimal,
                 )
             ):
@@ -2071,8 +2072,11 @@ class KCN:
                         for last_price_decimal in self.data_to_decimal(
                             current_symbol_last_price.last or ""
                         )
+                        for replased_symbol in self.replace_usdt_symbol_name(
+                            current_symbol_last_price.symbol
+                        )
                         for _ in self.fill_one_ticket_last_price(
-                            current_symbol_last_price.symbol.replace("-USDT", ""),
+                            replased_symbol,
                             last_price_decimal,
                         )
                         for _ in await self.fill_last_price()
