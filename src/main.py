@@ -220,11 +220,12 @@ class OrderChangeV2:
         class Data:
             """."""
 
-            orderId: str
-            type: str
             symbol: str
             side: str
-            price: str
+            orderId: str
+            orderType: str
+            type: str
+            price: str | None  # fix for market order type
             size: str | None
             matchSize: str | None
 
@@ -1222,7 +1223,7 @@ class KCN:
             Ok(None)
             for symbol_name in self.replace_quote_in_symbol_name(data.symbol)
             # update last price
-            for price_decimal in self.data_to_decimal(data.price)
+            for price_decimal in self.data_to_decimal(data.price or "")
             for _ in self.update_last_price_to_book(symbol_name, price_decimal)
             # send data to db
             for _ in await self.insert_data_to_db(data)
@@ -1261,13 +1262,14 @@ class KCN:
         data: OrderChangeV2.Res,
     ) -> Result[None, Exception]:
         """Event matching order."""
-        match data.data.type:
-            case "filled":  # complete fill order
-                match await self.event_filled(data.data):
-                    case Err(exc):
-                        logger.exception(exc)
-            case "match":  # partician fill order
-                self.event_matching(data.data)
+        if data.data.orderType == "limit":
+            match data.data.type:
+                case "filled":  # complete fill order
+                    match await self.event_filled(data.data):
+                        case Err(exc):
+                            logger.exception(exc)
+                case "match":  # partician fill order
+                    self.event_matching(data.data)
         return Ok(None)
 
     async def listen_event(
