@@ -1183,7 +1183,7 @@ class KCN:
         except (TypeError, InvalidOperation) as exc:
             return Err(exc)
 
-    def replace_usdt_symbol_name(self: Self, data: str) -> Result[str, Exception]:
+    def replace_quote_in_symbol_name(self: Self, data: str) -> Result[str, Exception]:
         """Replace BTC-USDT to BTC."""
         return Ok(data.replace("-USDT", ""))
 
@@ -1220,7 +1220,7 @@ class KCN:
         """."""
         return await do_async(
             Ok(None)
-            for symbol_name in self.replace_usdt_symbol_name(data.symbol)
+            for symbol_name in self.replace_quote_in_symbol_name(data.symbol)
             # update last price
             for price_decimal in self.data_to_decimal(data.price)
             for _ in self.update_last_price_to_book(symbol_name, price_decimal)
@@ -1241,7 +1241,9 @@ class KCN:
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
         """."""
-        match do(Ok(symbol) for symbol in self.replace_usdt_symbol_name(data.symbol)):
+        match do(
+            Ok(symbol) for symbol in self.replace_quote_in_symbol_name(data.symbol)
+        ):
             case Ok(symbol):
                 if symbol in self.book and data.matchSize:
                     if data.side == "sell":
@@ -1765,7 +1767,7 @@ class KCN:
             match do(
                 Ok(None)
                 for last_price_decimal in self.data_to_decimal(ticket.last or "")
-                for replaced_symbol in self.replace_usdt_symbol_name(ticket.symbol)
+                for replaced_symbol in self.replace_quote_in_symbol_name(ticket.symbol)
                 for _ in self.fill_one_ticket_last_price(
                     replaced_symbol,
                     last_price_decimal,
@@ -2078,7 +2080,7 @@ class KCN:
                         for last_price_decimal in self.data_to_decimal(
                             current_symbol_last_price.last or ""
                         )
-                        for replased_symbol in self.replace_usdt_symbol_name(
+                        for replased_symbol in self.replace_quote_in_symbol_name(
                             current_symbol_last_price.symbol
                         )
                         for _ in self.fill_one_ticket_last_price(
