@@ -226,6 +226,7 @@ class OrderChangeV2:
             side: str
             price: str
             size: str | None
+            matchSize: str | None
 
         data: Data
 
@@ -1242,14 +1243,12 @@ class KCN:
             for _ in self.update_last_price_to_book(symbol_name, price_like_decimal)
             # send data to db
             for _ in await self.insert_data_to_db(data)
-            # cancel other order
+            # cancel other order of symbol
             for loses_orders in self.find_loses_orders(
                 symbol_name,
                 data.orderId,
             )
             for _ in await self.massive_cancel_order(loses_orders)
-            # update balance
-            for _ in await self.fill_balance()
             # create new orders
             for _ in await self.make_updown_margin_order(symbol_name)
         ):
@@ -1265,8 +1264,10 @@ class KCN:
     ) -> Result[None, Exception]:
         """Event matching order."""
         match data.data.type:
-            case "filled": # complete fill order
+            case "filled":  # complete fill order
                 await self.event_matching_filled(data.data)
+            case "match":  # partician fill order
+                pass
         return Ok(None)
 
     async def listen_matching_msg(
