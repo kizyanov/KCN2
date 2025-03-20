@@ -39,9 +39,9 @@ from websockets import exceptions as websockets_exceptions
 class AlertestToken:
     """."""
 
-    all_tokens: list[str] = field(default_factory=list[str])
-    deleted_tokens: list[str] = field(default_factory=list[str])
-    new_tokens: list[str] = field(default_factory=list[str])
+    all_tokens: list[str]
+    deleted_tokens: list[str]
+    new_tokens: list[str]
 
 
 @dataclass
@@ -58,9 +58,9 @@ class Book:
 class OrderParam:
     """."""
 
-    side: str = field(default="")
-    price: str = field(default="")
-    size: str = field(default="")
+    side: str
+    price: str
+    size: str
 
 
 @dataclass(frozen=True)
@@ -1151,18 +1151,6 @@ class KCN:
                 "last": Decimal,
                 "baseincrement": Decimal,
                 "priceincrement": Decimal,
-            },
-            "SOL": {
-                "balance": Decimal,
-                "last": Decimal,
-                "baseincrement": Decimal,
-                "priceincrement": Decimal,
-            },
-            "BTC": {
-                "balance": Decimal,
-                "last": Decimal,
-                "baseincrement": Decimal,
-                "priceincrement": Decimal,
             }
         }
         book_orders = {
@@ -1171,14 +1159,6 @@ class KCN:
                 "buyorder": ""
             },
             "JUP": {
-                "sellorder": "",
-                "buyorder": ""
-            },
-            "SOL": {
-                "sellorder": "",
-                "buyorder": ""
-            },
-            "BTC": {
                 "sellorder": "",
                 "buyorder": ""
             }
@@ -1606,7 +1586,7 @@ class KCN:
 
         return Ok(None)
 
-    def _fill_balance(
+    def fill_balance_of_each_token(
         self: Self,
         data: ApiV1AccountsGET.Res,
     ) -> Result[None, Exception]:
@@ -1623,7 +1603,7 @@ class KCN:
             for balance_accounts in await self.get_api_v1_accounts(
                 params={"type": "margin"},
             )
-            for _ in self._fill_balance(balance_accounts)
+            for _ in self.fill_balance_of_each_token(balance_accounts)
         )
 
     # nu cho jopki kak dila
