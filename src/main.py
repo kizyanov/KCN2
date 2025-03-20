@@ -1982,7 +1982,13 @@ class KCN:
         data: list[ApiV1OrdersGET.Res.Data.Item],
     ) -> Result[list[str], Exception]:
         """Filted open order by exist in book."""
-        return Ok([order.id for order in data if order.symbol in self.book])
+        return Ok(
+            [
+                order.id
+                for order in data
+                if order.symbol.replace("-USDT", "") in self.book
+            ]
+        )
 
     async def pre_init(self: Self) -> Result[Self, Exception]:
         """Pre-init.
@@ -2029,7 +2035,7 @@ class KCN:
     ) -> Result[ApiV1MarketAllTickers.Res.Data.Ticker, Exception]:
         """."""
         for ticket in data.data.ticker:
-            if symbol == ticket.symbol.replace("USDT-", ""):
+            if symbol == ticket.symbol.replace("-USDT", ""):
                 return Ok(ticket)
         return Err(Exception(f"Can't find {symbol=} in {data.data.ticker}"))
 
