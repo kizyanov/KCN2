@@ -1586,14 +1586,23 @@ class KCN:
 
         return Ok(None)
 
-    def fill_balance_of_each_token(
+    def fill_balance_to_current_token(
+        self: Self,
+        symbol: str,
+        balance: str,
+    ) -> Result[None, Exception]:
+        """Fill balance current symbol."""
+        if symbol in self.book:
+            self.book[symbol].balance = Decimal(balance)
+        return Ok(None)
+
+    def fill_balance_all_tokens(
         self: Self,
         data: ApiV1AccountsGET.Res,
     ) -> Result[None, Exception]:
-        """Export current balance from data."""
+        """Fill balance to all tokens in book."""
         for ticket in data.data:
-            if ticket.currency in self.book:
-                self.book[ticket.currency].balance = Decimal(ticket.balance)
+            self.fill_balance_to_current_token(ticket.currency, ticket.balance)
         return Ok(None)
 
     async def fill_balance(self: Self) -> Result[None, Exception]:
@@ -1603,7 +1612,7 @@ class KCN:
             for balance_accounts in await self.get_api_v1_accounts(
                 params={"type": "margin"},
             )
-            for _ in self.fill_balance_of_each_token(balance_accounts)
+            for _ in self.fill_balance_all_tokens(balance_accounts)
         )
 
     # nu cho jopki kak dila
