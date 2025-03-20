@@ -1265,7 +1265,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Event matching order."""
         match data.data.type:
-            case "filled":
+            case "filled": # complete fill order
                 await self.event_matching_filled(data.data)
         return Ok(None)
 
