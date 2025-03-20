@@ -17,7 +17,6 @@ from typing import Any, Self
 from urllib.parse import urljoin
 from uuid import UUID, uuid4
 
-import uvloop
 from aiohttp import ClientConnectorError, ClientSession
 from asyncpg import Pool, Record, create_pool
 from dacite import (
@@ -40,9 +39,9 @@ from websockets import exceptions as websockets_exceptions
 class AlertestToken:
     """."""
 
-    all_tokens: list[str] = field(default_factory=list[str])
-    deleted_tokens: list[str] = field(default_factory=list[str])
-    new_tokens: list[str] = field(default_factory=list[str])
+    all_tokens: list[str]
+    deleted_tokens: list[str]
+    new_tokens: list[str]
 
 
 @dataclass
@@ -59,9 +58,9 @@ class Book:
 class OrderParam:
     """."""
 
-    side: str = field(default="")
-    price: str = field(default="")
-    size: str = field(default="")
+    side: str
+    price: str
+    size: str
 
 
 @dataclass(frozen=True)
@@ -172,6 +171,7 @@ class ApiV1OrdersGET:
                 """."""
 
                 id: str = field(default="")
+                symbol: str = field(default="")
 
             items: list[Item] = field(default_factory=list[Item])
 
@@ -220,14 +220,15 @@ class OrderChangeV2:
         class Data:
             """."""
 
-            orderId: str = field(default="")
-            type: str = field(default="")
-            symbol: str = field(default="")
-            side: str = field(default="")
-            size: str = field(default="")
-            price: str = field(default="")
+            orderId: str
+            type: str
+            symbol: str
+            side: str
+            price: str
+            size: str | None
+            matchSize: str | None
 
-        data: Data = field(default_factory=Data)
+        data: Data
 
 
 @dataclass(frozen=True)
@@ -991,7 +992,7 @@ class KCN:
                 for _ in await self.welcome_processing_websocket(ws_inst)
                 # subscribe to topic
                 for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
-                for _ in await self.listen_matching_msg(ws_inst)
+                for _ in await self.listen_event(ws_inst)
             ):
                 case Err(exc):
                     return Err(exc)
@@ -1150,18 +1151,6 @@ class KCN:
                 "last": Decimal,
                 "baseincrement": Decimal,
                 "priceincrement": Decimal,
-            },
-            "SOL": {
-                "balance": Decimal,
-                "last": Decimal,
-                "baseincrement": Decimal,
-                "priceincrement": Decimal,
-            },
-            "BTC": {
-                "balance": Decimal,
-                "last": Decimal,
-                "baseincrement": Decimal,
-                "priceincrement": Decimal,
             }
         }
         book_orders = {
@@ -1170,14 +1159,6 @@ class KCN:
                 "buyorder": ""
             },
             "JUP": {
-                "sellorder": "",
-                "buyorder": ""
-            },
-            "SOL": {
-                "sellorder": "",
-                "buyorder": ""
-            },
-            "BTC": {
                 "sellorder": "",
                 "buyorder": ""
             }
@@ -1195,7 +1176,7 @@ class KCN:
         """Convert Decimal to str."""
         return Ok(str(data))
 
-    def int_to_decimal(self: Self, data: float | str) -> Result[Decimal, Exception]:
+    def data_to_decimal(self: Self, data: float | str) -> Result[Decimal, Exception]:
         """Convert to Decimal format."""
         try:
             return Ok(Decimal(data))
@@ -1226,50 +1207,68 @@ class KCN:
         price: Decimal,
     ) -> Result[None, Exception]:
         """."""
-        self.book[ticker].last_price = price
+        try:
+            self.book[ticker].last_price = price
+        except IndexError as exc:
+            return Err(exc)
         return Ok(None)
 
-    async def event_matching_filled(
+    async def event_filled(
         self: Self,
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
         """."""
-        match await do_async(
+        return await do_async(
             Ok(None)
             for symbol_name in self.replace_usdt_symbol_name(data.symbol)
             # update last price
-            for price_like_decimal in self.int_to_decimal(data.price)
-            for _ in self.update_last_price_to_book(symbol_name, price_like_decimal)
+            for price_decimal in self.data_to_decimal(data.price)
+            for _ in self.update_last_price_to_book(symbol_name, price_decimal)
             # send data to db
             for _ in await self.insert_data_to_db(data)
-            # cancel other order
+            # cancel other order of symbol
             for loses_orders in self.find_loses_orders(
                 symbol_name,
                 data.orderId,
             )
             for _ in await self.massive_cancel_order(loses_orders)
-            # update balance
-            for _ in await self.fill_balance()
             # create new orders
             for _ in await self.make_updown_margin_order(symbol_name)
-        ):
-            case Ok(None):
-                pass
-            case Err(exc):
-                logger.exception(exc)
+        )
+
+    def event_matching(
+        self: Self,
+        data: OrderChangeV2.Res.Data,
+    ) -> Result[None, Exception]:
+        """."""
+        match do(Ok(symbol) for symbol in self.replace_usdt_symbol_name(data.symbol)):
+            case Ok(symbol):
+                if symbol in self.book and data.matchSize:
+                    if data.side == "sell":
+                        # decrease token
+                        self.book[symbol].balance -= Decimal(data.matchSize)
+                        logger.success(f"Decrease balance on {data.matchSize}")
+                    else:
+                        # increase tokens
+                        self.book[symbol].balance += Decimal(data.matchSize)
+                        logger.success(f"Increase balance on {data.matchSize}")
         return Ok(None)
 
-    async def event_matching(
+    async def event(
         self: Self,
         data: OrderChangeV2.Res,
     ) -> Result[None, Exception]:
         """Event matching order."""
         match data.data.type:
-            case "filled":
-                await self.event_matching_filled(data.data)
+            case "filled":  # complete fill order
+                match await self.event_filled(data.data):
+                    case Err(exc):
+                        logger.exception(exc)
+            case "match":  # partician fill order
+                self.event_matching(data.data)
         return Ok(None)
 
-    async def listen_matching_msg(
+    async def listen_event(
         self: Self,
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
@@ -1282,7 +1281,7 @@ class KCN:
                     OrderChangeV2.Res,
                     value,
                 )
-                for _ in await self.event_matching(data_dataclass)
+                for _ in await self.event(data_dataclass)
             ):
                 case Err(exc):
                     return Err(exc)
@@ -1595,15 +1594,43 @@ class KCN:
 
         return Ok(None)
 
-    def _fill_balance(
+    def fill_balance_to_current_token(
+        self: Self,
+        symbol: str,
+        balance: Decimal,
+    ) -> Result[None, Exception]:
+        """Fill balance current symbol."""
+        try:
+            self.book[symbol].balance = balance
+        except IndexError as exc:
+            return Err(exc)
+        return Ok(None)
+
+    def fill_balance_all_tokens(
+        self: Self,
+        data: list[ApiV1AccountsGET.Res.Data],
+    ) -> Result[None, Exception]:
+        """Fill balance to all tokens in book."""
+        for ticket in data:
+            match do(
+                Ok(None)
+                for balance_decimal in self.data_to_decimal(ticket.balance)
+                for _ in self.fill_balance_to_current_token(
+                    ticket.currency,
+                    balance_decimal,
+                )
+            ):
+                case Err(exc):
+                    return Err(exc)
+
+        return Ok(None)
+
+    def filter_ticket_by_book_balance(
         self: Self,
         data: ApiV1AccountsGET.Res,
-    ) -> Result[None, Exception]:
-        """Export current balance from data."""
-        for ticket in data.data:
-            if ticket.currency in self.book:
-                self.book[ticket.currency].balance = Decimal(ticket.balance)
-        return Ok(None)
+    ) -> Result[list[ApiV1AccountsGET.Res.Data], Exception]:
+        """."""
+        return Ok([ticket for ticket in data.data if ticket.currency in self.book])
 
     async def fill_balance(self: Self) -> Result[None, Exception]:
         """Fill all balance by ENVs."""
@@ -1612,58 +1639,141 @@ class KCN:
             for balance_accounts in await self.get_api_v1_accounts(
                 params={"type": "margin"},
             )
-            for _ in self._fill_balance(balance_accounts)
+            for ticket_to_fill in self.filter_ticket_by_book_balance(balance_accounts)
+            for _ in self.fill_balance_all_tokens(ticket_to_fill)
         )
 
-    # nu cho jopki kak dila
-    def _fill_base_increment(
+    def fill_one_symbol_base_increment(
         self: Self,
-        data: ApiV2SymbolsGET.Res,
+        symbol: str,
+        base_increment: Decimal,
     ) -> Result[None, Exception]:
-        """Fill base increment by each token."""
-        for out_side_ticket in data.data:
-            if (
-                out_side_ticket.baseCurrency in self.book
-                and out_side_ticket.quoteCurrency == "USDT"
-            ):
-                self.book[out_side_ticket.baseCurrency].baseincrement = Decimal(
-                    out_side_ticket.baseIncrement,
-                )
+        """."""
+        try:
+            self.book[symbol].baseincrement = base_increment
+        except IndexError as exc:
+            return Err(exc)
         return Ok(None)
 
-    def _fill_price_increment(
+    # nu cho jopki kak dila
+    def fill_all_base_increment(
         self: Self,
-        data: ApiV2SymbolsGET.Res,
+        data: list[ApiV2SymbolsGET.Res.Data],
+    ) -> Result[None, Exception]:
+        """Fill base increment by each token."""
+        for ticket in data:
+            match do(
+                Ok(None)
+                for base_increment_decimal in self.data_to_decimal(ticket.baseIncrement)
+                for _ in self.fill_one_symbol_base_increment(
+                    ticket.baseCurrency,
+                    base_increment_decimal,
+                )
+            ):
+                case Err(exc):
+                    return Err(exc)
+
+        return Ok(None)
+
+    def fill_one_symbol_price_increment(
+        self: Self,
+        symbol: str,
+        price_increment: Decimal,
+    ) -> Result[None, Exception]:
+        """."""
+        try:
+            self.book[symbol].priceincrement = price_increment
+        except IndexError as exc:
+            return Err(exc)
+        return Ok(None)
+
+    def fill_all_price_increment(
+        self: Self,
+        data: list[ApiV2SymbolsGET.Res.Data],
     ) -> Result[None, Exception]:
         """Fill price increment by each token."""
-        for out_side_ticket in data.data:
-            if (
-                out_side_ticket.baseCurrency in self.book
-                and out_side_ticket.quoteCurrency == "USDT"
-            ):
-                self.book[out_side_ticket.baseCurrency].priceincrement = Decimal(
-                    out_side_ticket.priceIncrement,
+        for ticket in data:
+            match do(
+                Ok(None)
+                for price_increment_decimal in self.data_to_decimal(
+                    ticket.priceIncrement
                 )
+                for _ in self.fill_one_symbol_price_increment(
+                    ticket.baseCurrency,
+                    price_increment_decimal,
+                )
+            ):
+                case Err(exc):
+                    return Err(exc)
         return Ok(None)
+
+    def filter_ticket_by_book_increment(
+        self: Self,
+        data: ApiV2SymbolsGET.Res,
+    ) -> Result[list[ApiV2SymbolsGET.Res.Data], Exception]:
+        """."""
+        return Ok(
+            [
+                out_side_ticket
+                for out_side_ticket in data.data
+                if out_side_ticket.baseCurrency in self.book
+                and out_side_ticket.quoteCurrency == "USDT"
+            ]
+        )
 
     async def fill_increment(self: Self) -> Result[None, Exception]:
         """Fill increment from api."""
         return await do_async(
             Ok(None)
             for ticket_info in await self.get_api_v2_symbols()
-            for _ in self._fill_base_increment(ticket_info)
-            for _ in self._fill_price_increment(ticket_info)
+            for ticket_for_fill in self.filter_ticket_by_book_increment(ticket_info)
+            for _ in self.fill_all_base_increment(ticket_for_fill)
+            for _ in self.fill_all_price_increment(ticket_for_fill)
         )
 
-    def _fill_last_price(
+    def filter_ticket_by_book_last_price(
         self: Self,
         data: ApiV1MarketAllTickers.Res,
+    ) -> Result[list[ApiV1MarketAllTickers.Res.Data.Ticker], Exception]:
+        """."""
+        return Ok(
+            [
+                ticket
+                for ticket in data.data.ticker
+                if ticket.symbol.replace("-USDT", "") in self.book and ticket.last
+            ]
+        )
+
+    def fill_one_ticket_last_price(
+        self: Self,
+        symbol: str,
+        last_price: Decimal,
+    ) -> Result[None, Exception]:
+        """."""
+        try:
+            self.book[symbol].last_price = last_price
+        except IndexError as exc:
+            return Err(exc)
+        return Ok(None)
+
+    def fill_all_last_price(
+        self: Self,
+        data: list[ApiV1MarketAllTickers.Res.Data.Ticker],
     ) -> Result[None, Exception]:
         """Fill last price for each token."""
-        for ticket in data.data.ticker:
-            symbol = ticket.symbol.replace("-USDT", "")
-            if symbol in self.book and isinstance(ticket.last, str):
-                self.book[symbol].last_price = Decimal(ticket.last)
+        for ticket in data:
+            match do(
+                Ok(None)
+                for last_price_decimal in self.data_to_decimal(ticket.last or "")
+                for replaced_symbol in self.replace_usdt_symbol_name(ticket.symbol)
+                for _ in self.fill_one_ticket_last_price(
+                    replaced_symbol,
+                    last_price_decimal,
+                )
+            ):
+                case Err(exc):
+                    return Err(exc)
+
         return Ok(None)
 
     async def fill_last_price(self: Self) -> Result[None, Exception]:
@@ -1671,7 +1781,8 @@ class KCN:
         return await do_async(
             Ok(None)
             for market_ticket in await self.get_api_v1_market_all_tickers()
-            for _ in self._fill_last_price(market_ticket)
+            for ticket_for_fill in self.filter_ticket_by_book_last_price(market_ticket)
+            for _ in self.fill_all_last_price(ticket_for_fill)
         )
 
     def divide(
@@ -1805,7 +1916,7 @@ class KCN:
                     "kucoin",
                     data.symbol,
                     data.side,
-                    data.size,
+                    data.size or "",
                     data.price,
                     datetime.now(),  # noqa: DTZ005
                 )
@@ -1816,7 +1927,7 @@ class KCN:
     async def create_db_pool(self: Self) -> Result[None, Exception]:
         """Create Postgresql connection pool."""
         try:
-            self.pool: Pool[Record] = await create_pool(  # type: ignore [assignment]
+            self.pool: Pool[Record] = await create_pool(
                 user=self.PG_USER,
                 password=self.PG_PASSWORD,
                 database=self.PG_DATABASE,
@@ -1828,32 +1939,50 @@ class KCN:
         except ConnectionRefusedError as exc:
             return Err(exc)
 
-    async def get_all_open_orders(self: Self) -> Result[list[str], Exception]:
+    def to_str(self: Self, data: float) -> Result[str, Exception]:
+        """."""
+        try:
+            return Ok(str(data))
+        except TypeError as exc:
+            return Err(exc)
+
+    async def get_all_open_orders(
+        self: Self,
+    ) -> Result[list[ApiV1OrdersGET.Res.Data.Item], Exception]:
         """Get all open orders."""
-        open_orders: list[str] = []
+        open_orders: list[ApiV1OrdersGET.Res.Data.Item] = []
         pagesize = 500
         currentpage = 1
         while True:
             match await do_async(
                 Ok(orders_for_cancel)
+                for page_size_str in self.to_str(pagesize)
+                for current_page_str in self.to_str(currentpage)
                 for orders_for_cancel in await self.get_api_v1_orders(
                     params={
                         "status": "active",
                         "tradeType": "MARGIN_TRADE",
-                        "pageSize": str(pagesize),
-                        "currentPage": str(currentpage),
+                        "pageSize": page_size_str,
+                        "currentPage": current_page_str,
                     },
                 )
             ):
                 case Ok(res):
-                    currentpage += 1
-                    ids = [item.id for item in res.data.items]
-                    if len(ids) == 0:
+                    if len(res.data.items) == 0:
                         break
-                    open_orders += ids
+
+                    currentpage += 1
+                    open_orders += res.data.items
                 case Err(exc):
                     return Err(exc)
         return Ok(open_orders)
+
+    def filter_open_order_by_symbol(
+        self: Self,
+        data: list[ApiV1OrdersGET.Res.Data.Item],
+    ) -> Result[list[str], Exception]:
+        """Filted open order by exist in book."""
+        return Ok([order.id for order in data if order.symbol in self.book])
 
     async def pre_init(self: Self) -> Result[Self, Exception]:
         """Pre-init.
@@ -1868,12 +1997,41 @@ class KCN:
             for _ in self.init_envs()
             for _ in await self.create_db_pool()
             for _ in self.create_book()
-            for orders_for_cancel in await self.get_all_open_orders()
+            for open_orders in await self.get_all_open_orders()
+            for orders_for_cancel in self.filter_open_order_by_symbol(open_orders)
             for _ in await self.massive_cancel_order(orders_for_cancel)
+            for _ in await self.sleep_to(sleep_on=5)
             for _ in await self.fill_balance()
             for _ in await self.fill_increment()
             for _ in await self.fill_last_price()
         )
+
+    async def sleep_to(self: Self, *, sleep_on: int = 1) -> Result[None, Exception]:
+        """."""
+        await asyncio.sleep(sleep_on)
+        return Ok(None)
+
+    def filter_balance_by_symbol(
+        self: Self,
+        symbol: str,
+        data: ApiV1AccountsGET.Res,
+    ) -> Result[ApiV1AccountsGET.Res.Data, Exception]:
+        """."""
+        for ticket in data.data:
+            if symbol == ticket.currency:
+                return Ok(ticket)
+        return Err(Exception(f"Can't find {symbol=} in {data.data}"))
+
+    def filter_last_price_by_symbol(
+        self: Self,
+        symbol: str,
+        data: ApiV1MarketAllTickers.Res,
+    ) -> Result[ApiV1MarketAllTickers.Res.Data.Ticker, Exception]:
+        """."""
+        for ticket in data.data.ticker:
+            if symbol == ticket.symbol.replace("USDT-", ""):
+                return Ok(ticket)
+        return Err(Exception(f"Can't find {symbol=} in {data.data.ticker}"))
 
     async def reclaim_orders(self: Self) -> Result[None, Exception]:
         """."""
@@ -1884,15 +2042,44 @@ class KCN:
                 if len(self.book_orders[ticket]) != perfect_count_orders:
                     await do_async(
                         Ok(None)
-                        # update balance
-                        for _ in await self.fill_balance()
-                        # update last price
-                        for _ in await self.fill_last_price()
                         for loses_orders in self.find_loses_orders(
                             ticket,
                             "",
                         )
                         for _ in await self.massive_cancel_order(loses_orders)
+                        for _ in await self.sleep_to(sleep_on=5)
+                        # update balance
+                        for balance_accounts in await self.get_api_v1_accounts(
+                            params={"type": "margin"},
+                        )
+                        for current_symbol_balance in self.filter_balance_by_symbol(
+                            ticket,
+                            balance_accounts,
+                        )
+                        for balance_decimal in self.data_to_decimal(
+                            current_symbol_balance.balance
+                        )
+                        for _ in self.fill_balance_to_current_token(
+                            ticket,
+                            balance_decimal,
+                        )
+                        # update last price
+                        for market_ticket in await self.get_api_v1_market_all_tickers()
+                        for current_symbol_last_price in self.filter_last_price_by_symbol(
+                            ticket,
+                            market_ticket,
+                        )
+                        for last_price_decimal in self.data_to_decimal(
+                            current_symbol_last_price.last or ""
+                        )
+                        for replased_symbol in self.replace_usdt_symbol_name(
+                            current_symbol_last_price.symbol
+                        )
+                        for _ in self.fill_one_ticket_last_price(
+                            replased_symbol,
+                            last_price_decimal,
+                        )
+                        for _ in await self.fill_last_price()
                         for _ in await self.make_updown_margin_order(ticket)
                     )
 
@@ -1937,5 +2124,4 @@ async def main() -> Result[None, Exception]:
 
 if __name__ == "__main__":
     """Main enter."""
-    uvloop.install()
     asyncio.run(main())
