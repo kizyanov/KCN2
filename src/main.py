@@ -992,7 +992,7 @@ class KCN:
                 for _ in await self.welcome_processing_websocket(ws_inst)
                 # subscribe to topic
                 for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
-                for _ in await self.listen_matching_msg(ws_inst)
+                for _ in await self.listen_event(ws_inst)
             ):
                 case Err(exc):
                     return Err(exc)
@@ -1230,7 +1230,7 @@ class KCN:
         self.book[ticker].last_price = price
         return Ok(None)
 
-    async def event_matching_filled(
+    async def event_filled(
         self: Self,
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
@@ -1255,19 +1255,32 @@ class KCN:
 
     async def event_matching(
         self: Self,
+        data: OrderChangeV2.Res.Data,
+    ) -> Result[None, Exception]:
+        """."""
+        return await do_async(
+            Ok(None)
+            for _ in self.replace_usdt_symbol_name(data.symbol)
+            # fill balance
+        )
+
+    async def event(
+        self: Self,
         data: OrderChangeV2.Res,
     ) -> Result[None, Exception]:
         """Event matching order."""
         match data.data.type:
             case "filled":  # complete fill order
-                match await self.event_matching_filled(data.data):
+                match await self.event_filled(data.data):
                     case Err(exc):
                         logger.exception(exc)
             case "match":  # partician fill order
-                pass
+                match await self.event_matching(data.data):
+                    case Err(exc):
+                        logger.exception(exc)
         return Ok(None)
 
-    async def listen_matching_msg(
+    async def listen_event(
         self: Self,
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
@@ -1280,7 +1293,7 @@ class KCN:
                     OrderChangeV2.Res,
                     value,
                 )
-                for _ in await self.event_matching(data_dataclass)
+                for _ in await self.event(data_dataclass)
             ):
                 case Err(exc):
                     return Err(exc)
