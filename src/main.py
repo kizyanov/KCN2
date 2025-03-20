@@ -1235,7 +1235,7 @@ class KCN:
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
         """."""
-        match await do_async(
+        return await do_async(
             Ok(None)
             for symbol_name in self.replace_usdt_symbol_name(data.symbol)
             # update last price
@@ -1251,12 +1251,7 @@ class KCN:
             for _ in await self.massive_cancel_order(loses_orders)
             # create new orders
             for _ in await self.make_updown_margin_order(symbol_name)
-        ):
-            case Ok(None):
-                pass
-            case Err(exc):
-                logger.exception(exc)
-        return Ok(None)
+        )
 
     async def event_matching(
         self: Self,
@@ -1265,7 +1260,9 @@ class KCN:
         """Event matching order."""
         match data.data.type:
             case "filled":  # complete fill order
-                await self.event_matching_filled(data.data)
+                match await self.event_matching_filled(data.data):
+                    case Err(exc):
+                        logger.exception(exc)
             case "match":  # partician fill order
                 pass
         return Ok(None)
