@@ -1542,10 +1542,6 @@ class KCN:
             case Ok(order_id):
                 return Ok(order_id)
             case Err(exc):
-                if "Invalid KC-API-TIMESTAMP" in str(
-                    exc,
-                ) or "Insufficient balance." in str(exc):
-                    return await self.wrap_post_api_v1_margin_order(params_order_up)
                 return Err(exc)
         error_msg = f"Unexpected error with post_api_v1_margin_order:{params_order_up}"
         await self.send_telegram_msg(error_msg)
