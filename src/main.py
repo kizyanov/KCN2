@@ -220,14 +220,14 @@ class OrderChangeV2:
         class Data:
             """."""
 
-            orderId: str = field(default="")
-            type: str = field(default="")
-            symbol: str = field(default="")
-            side: str = field(default="")
-            size: str = field(default="")
-            price: str = field(default="")
+            orderId: str
+            type: str
+            symbol: str
+            side: str
+            price: str
+            size: str | None
 
-        data: Data = field(default_factory=Data)
+        data: Data
 
 
 @dataclass(frozen=True)
@@ -1828,6 +1828,13 @@ class KCN:
         except ConnectionRefusedError as exc:
             return Err(exc)
 
+    def to_str(self: Self, data: float) -> Result[str, Exception]:
+        """."""
+        try:
+            return Ok(str(data))
+        except TypeError as exc:
+            return Err(exc)
+
     async def get_all_open_orders(
         self: Self,
     ) -> Result[list[ApiV1OrdersGET.Res.Data.Item], Exception]:
@@ -1838,12 +1845,14 @@ class KCN:
         while True:
             match await do_async(
                 Ok(orders_for_cancel)
+                for page_size_str in self.to_str(pagesize)
+                for current_page_str in self.to_str(currentpage)
                 for orders_for_cancel in await self.get_api_v1_orders(
                     params={
                         "status": "active",
                         "tradeType": "MARGIN_TRADE",
-                        "pageSize": str(pagesize),
-                        "currentPage": str(currentpage),
+                        "pageSize": page_size_str,
+                        "currentPage": current_page_str,
                     },
                 )
             ):
