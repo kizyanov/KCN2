@@ -1857,20 +1857,18 @@ class KCN:
         return do(
             Ok(
                 OrderParam(
-                    side=side,
+                    side='sell',
                     price=last_price_str,
                     size=size_str,
                 ),
             )
             for last_price in self.plus_1_percent(self.book[ticket].last_price)
-            for need_balance in self.divide(self.BASE_KEEP, last_price)
             for last_price_quantize in self.quantize_plus(
                 last_price,
                 self.book[ticket].priceincrement,
             )
-            for side in self.choise_side(self.book[ticket].balance, need_balance)
             for last_price_str in self.decimal_to_str(last_price_quantize)
-            for raw_size in self.calc_size(self.book[ticket].balance, need_balance)
+            for raw_size in self.divide(last_price_quantize, Decimal('10.1'))
             for size in self.quantize_plus(
                 raw_size,
                 self.book[ticket].baseincrement,
@@ -1886,20 +1884,18 @@ class KCN:
         return do(
             Ok(
                 OrderParam(
-                    side=side,
+                    side='buy',
                     price=last_price_str,
                     size=size_str,
                 ),
             )
             for last_price in self.minus_1_percent(self.book[ticket].last_price)
-            for need_balance in self.divide(self.BASE_KEEP, last_price)
             for last_price_quantize in self.quantize_minus(
                 last_price,
                 self.book[ticket].priceincrement,
             )
-            for side in self.choise_side(self.book[ticket].balance, need_balance)
             for last_price_str in self.decimal_to_str(last_price_quantize)
-            for raw_size in self.calc_size(self.book[ticket].balance, need_balance)
+            for raw_size in self.divide(last_price_quantize, Decimal('10'))
             for size in self.quantize_plus(
                 raw_size,
                 self.book[ticket].baseincrement,
