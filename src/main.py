@@ -1868,7 +1868,7 @@ class KCN:
                 self.book[ticket].priceincrement,
             )
             for last_price_str in self.decimal_to_str(last_price_quantize)
-            for raw_size in self.divide(last_price_quantize, Decimal('10.1'))
+            for raw_size in self.divide(Decimal('10.1'), last_price_quantize)
             for size in self.quantize_plus(
                 raw_size,
                 self.book[ticket].baseincrement,
@@ -1895,7 +1895,7 @@ class KCN:
                 self.book[ticket].priceincrement,
             )
             for last_price_str in self.decimal_to_str(last_price_quantize)
-            for raw_size in self.divide(last_price_quantize, Decimal('10'))
+            for raw_size in self.divide(Decimal('10'), last_price_quantize)
             for size in self.quantize_plus(
                 raw_size,
                 self.book[ticket].baseincrement,
