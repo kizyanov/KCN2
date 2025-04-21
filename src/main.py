@@ -1117,6 +1117,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Runtime listen websocket all time."""
         tunnelid = "all_klines"
+        logger.warning("runtime_candle_ws")
         async with ws as ws_inst:
             match await do_async(
                 Ok(None)
@@ -1430,6 +1431,7 @@ class KCN:
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Infinity loop for listen candle msgs."""
+        logger.warning("listen_candle_event")
         async for msg in ws_inst:
             match await do_async(
                 Ok(None)
