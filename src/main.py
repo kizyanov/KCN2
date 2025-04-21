@@ -210,6 +210,18 @@ class ApiV3MarginAccountsGET:
 
 
 @dataclass(frozen=True)
+class ApiV3MarginRepayPOST:
+    """https://www.kucoin.com/docs-new/rest/margin-trading/debit/repay."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """Parse response request."""
+
+        code: str = field(default="")
+        msg: str = field(default="")
+
+
+@dataclass(frozen=True)
 class OrderChangeV2:
     """."""
 
@@ -461,6 +473,47 @@ class KCN:
         return await do_async(
             Ok(result)
             for _ in self.logger_info(f"Margin order:{data}")
+            for full_url in self.get_full_url(self.BASE_URL, uri)
+            for dumps_data_bytes in self.dumps_dict_to_bytes(data)
+            for dumps_data_str in self.decode(dumps_data_bytes)
+            for now_time in self.get_now_time()
+            for data_to_sign in self.cancatinate_str(
+                now_time,
+                method,
+                uri,
+                dumps_data_str,
+            )
+            for headers in self.get_headers_auth(
+                data_to_sign,
+                now_time,
+            )
+            for response_bytes in await self.request(
+                url=full_url,
+                method=method,
+                headers=headers,
+                data=dumps_data_bytes,
+            )
+            for response_dict in self.parse_bytes_to_dict(response_bytes)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                ApiV1MarginOrderPOST.Res,
+                response_dict,
+            )
+            for result in self.check_response_code(data_dataclass)
+        )
+
+    async def post_api_v3_margin_repay(
+        self: Self,
+        data: dict[str, str | int],
+    ) -> Result[ApiV1MarginOrderPOST.Res, Exception]:
+        """Repay borrowed .
+
+        https://www.kucoin.com/docs-new/rest/margin-trading/debit/repay
+
+        """
+        uri = "/api/v3/margin/repay"
+        method = "POST"
+        return await do_async(
+            Ok(result)
             for full_url in self.get_full_url(self.BASE_URL, uri)
             for dumps_data_bytes in self.dumps_dict_to_bytes(data)
             for dumps_data_str in self.decode(dumps_data_bytes)
@@ -1239,7 +1292,7 @@ class KCN:
             for _ in await self.make_updown_margin_order(symbol_name)
         )
 
-    def event_matching(
+    async def event_matching(
         self: Self,
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
@@ -1254,9 +1307,19 @@ class KCN:
         ):
             case Ok(symbol):
                 if symbol in self.book and data.matchSize and data.side == "buy":
+                    match await do_async(
+                        Ok(_)
+                        for _ in await self.post_api_v3_margin_repay(
+                            data={
+                                "currency": symbol,
+                                "size": int(data.matchSize),
+                            }
+                        )
+                    ):
+                        case Err(exc):
+                            logger.exception(exc)
                     self.book[symbol].borrow -= Decimal(data.matchSize)
                     logger.success(f"borrow on {data.matchSize}")
-
         return Ok(None)
 
     async def event(
@@ -1271,7 +1334,7 @@ class KCN:
                         case Err(exc):
                             logger.exception(exc)
                 case "match":  # partician fill order
-                    self.event_matching(data.data)
+                    await self.event_matching(data.data)
         return Ok(None)
 
     async def listen_event(
