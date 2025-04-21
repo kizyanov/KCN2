@@ -1610,7 +1610,7 @@ class KCN:
         """."""
         return Ok(
             ",".join(
-                [f"{symbol}-USTD_1h" for symbol in self.book],
+                [f"{symbol}-USDT_1h" for symbol in self.book],
             )
         )
 
