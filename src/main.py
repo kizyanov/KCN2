@@ -1211,20 +1211,25 @@ class KCN:
         }
         book_orders = {
             "ADA": {
-                "sellorder": "",
-                "buyorder": ""
+                "sell": "",
+                "buy": ""
             },
             "JUP": {
-                "sellorder": "",
-                "buyorder": ""
+                "sell": "",
+                "buy": ""
             }
         }
         """
         self.book: dict[str, Book] = {
             ticket: Book() for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
         }
-        self.book_orders: dict[str, list[str]] = {
-            ticket: [] for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
+        self.book_orders: dict[str, dict[str, str]] = {
+            ticket: {
+                "sell": "",
+                "buy": "",
+            }
+            for ticket in self.ALL_CURRENCY
+            if isinstance(ticket, str)
         }
         return Ok(None)
 
@@ -1249,11 +1254,14 @@ class KCN:
         order_id: str,
     ) -> Result[list[str], Exception]:
         """Find other orders not quals with order_id."""
+        result: list[str] = []
         if symbol in self.book_orders:
-            if order_id in self.book_orders[symbol]:
-                self.book_orders[symbol].remove(order_id)
-            result = self.book_orders[symbol][:]
-            self.book_orders[symbol] = []
+            result = [
+                saved_order_id
+                for saved_order_id in self.book_orders[symbol].values()
+                if order_id != saved_order_id
+            ]
+            self.book_orders[symbol] = {"sell": "", "buy": ""}
             return Ok(result)
         return Ok([])
 
@@ -1590,11 +1598,16 @@ class KCN:
     def save_order_id(
         self: Self,
         symbol: str,
+        side: str,
         order_id: str,
     ) -> Result[None, Exception]:
         """Save order id."""
         if symbol in self.book:
-            self.book_orders[symbol].append(order_id)
+            if side == "sell":
+                self.book_orders[symbol]["sell"] = order_id
+            else:
+                self.book_orders[symbol]["buy"] = order_id
+
         return Ok(None)
 
     async def wrap_post_api_v1_margin_order(
@@ -1617,13 +1630,14 @@ class KCN:
     async def make_order_and_save_result(
         self: Self,
         ticket: str,
-        params_order: dict[str, str | bool],
+        params_order: dict[str, dict[str, str | bool]],
+        side: str,
     ) -> Result[None, Exception]:
         """."""
         match await do_async(
             Ok(None)
-            for order_id in await self.wrap_post_api_v1_margin_order(params_order)
-            for _ in self.save_order_id(ticket, order_id.data.orderId)
+            for order_id in await self.wrap_post_api_v1_margin_order(params_order[side])
+            for _ in self.save_order_id(ticket, side, order_id.data.orderId)
         ):
             case Err(exc):
                 logger.exception(exc)
@@ -1635,7 +1649,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Make up and down limit order."""
         match await do_async(
-            Ok({"down": params_order_down, "up": params_order_up})
+            Ok({"buy": params_order_down, "sell": params_order_up})
             # for up
             for order_up in self.calc_up(ticket)
             for params_order_up in self.complete_margin_order(
@@ -1660,11 +1674,12 @@ class KCN:
                         tg.create_task(
                             self.make_order_and_save_result(
                                 ticket,
-                                params_order["down"],
+                                params_order,
+                                "buy",
                             )
                         )
                     tg.create_task(
-                        self.make_order_and_save_result(ticket, params_order["up"])
+                        self.make_order_and_save_result(ticket, params_order, "sell")
                     )
 
             case Err(exc):
