@@ -261,9 +261,9 @@ class ApiV1BulletPrivatePOST:
             class Instance:
                 """."""
 
-                endpoint: str = field(default="")
-                pingInterval: int = field(default=0)
-                pingTimeout: int = field(default=0)
+                endpoint: str 
+                pingInterval: int 
+                pingTimeout: int 
 
             instanceServers: list[Instance] = field(default_factory=list[Instance])
             token: str = field(default="")
@@ -733,6 +733,32 @@ class KCN:
             for result in self.check_response_code(data_dataclass)
         )
 
+    async def get_api_v1_bullet_public(
+        self: Self,
+    ) -> Result[ApiV1BulletPrivatePOST.Res, Exception]:
+        """Get tokens for private channel.
+
+        https://www.kucoin.com/docs/websocket/basic-info/apply-connect-token/public-token-no-authentication-required-
+        """
+        uri = "/api/v1/bullet-public"
+        method = "POST"
+        return await do_async(
+            Ok(result)
+            for full_url in self.get_full_url(self.BASE_URL, uri)
+            for headers in self.get_headers_not_auth()
+            for response_bytes in await self.request(
+                url=full_url,
+                method=method,
+                headers=headers,
+            )
+            for response_dict in self.parse_bytes_to_dict(response_bytes)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                ApiV1BulletPrivatePOST.Res,
+                response_dict,
+            )
+            for result in self.check_response_code(data_dataclass)
+        )
+
     async def get_api_v1_market_all_tickers(
         self: Self,
     ) -> Result[ApiV1MarketAllTickers.Res, Exception]:
@@ -1035,6 +1061,26 @@ class KCN:
         )
 
     async def runtime_matching_ws(
+        self: Self,
+        ws: connect,
+        subsribe_msg: dict[str, str | bool],
+    ) -> Result[None, Exception]:
+        """Runtime listen websocket all time."""
+        async with ws as ws_inst:
+            match await do_async(
+                Ok(None)
+                # get welcome msg
+                for _ in await self.welcome_processing_websocket(ws_inst)
+                # subscribe to topic
+                for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
+                for _ in await self.listen_event(ws_inst)
+            ):
+                case Err(exc):
+                    return Err(exc)
+
+        return Ok(None)
+
+    async def runtime_candle_ws(
         self: Self,
         ws: connect,
         subsribe_msg: dict[str, str | bool],
@@ -1503,6 +1549,23 @@ class KCN:
             for default_uuid4 in self.get_default_uuid4()
             for uuid_str in self.format_to_str_uuid(default_uuid4)
         )
+    def get_msg_for_subscribe_candle(
+        self: Self,
+    ) -> Result[dict[str, str | bool], Exception]:
+        """Get msg for subscribe to candle kucoin."""
+        return do(
+            Ok(
+                {
+                    "id": uuid_str,
+                    "type": "subscribe",
+                    "topic": "/spotMarket/tradeOrdersV2",
+                    "privateChannel": True,
+                    "response": True,
+                },
+            )
+            for default_uuid4 in self.get_default_uuid4()
+            for uuid_str in self.format_to_str_uuid(default_uuid4)
+        )
 
     async def matching(self: Self) -> Result[None, Exception]:
         """Monitoring of matching order.
@@ -1535,6 +1598,58 @@ class KCN:
                         logger.exception(exc)
                         await self.send_telegram_msg(
                             "Drop matching websocket: see logs",
+                        )
+            except (
+                ConnectionResetError,
+                websockets_exceptions.ConnectionClosed,
+                TimeoutError,
+                websockets_exceptions.WebSocketException,
+                socket.gaierror,
+                ConnectionRefusedError,
+                SSLError,
+                OSError,
+            ) as exc:
+                logger.exception(exc)
+                await self.send_telegram_msg("Drop matching websocket: see logs")
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(exc)
+                await self.send_telegram_msg("Unexpected error in matching: see logs")
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
+
+    async def candle(self: Self) -> Result[None, Exception]:
+        """Monitoring of candle.
+
+        Start listen websocket
+        """
+        reconnect_delay = 1
+        max_reconnect_delay = 60
+        while True:
+            try:
+                logger.info("candle start")
+                match await do_async(
+                    Ok(None)
+                    for bullet_public in await self.get_api_v1_bullet_public()
+                    for url_ws in self.get_url_for_websocket(bullet_public)
+                    for ping_interval in self.get_ping_interval_for_websocket(
+                        bullet_public,
+                    )
+                    for ping_timeout in self.get_ping_timeout_for_websocket(
+                        bullet_public,
+                    )
+                    for ws in self.get_websocket(url_ws, ping_interval, ping_timeout)
+                    for msg_subscribe_candle in self.get_msg_for_subscribe_candle()
+                    for _ in await self.runtime_candle_ws(
+                        ws,
+                        msg_subscribe_candle,
+                    )
+                ):
+                    case Err(exc):
+                        logger.exception(exc)
+                        await self.send_telegram_msg(
+                            "Drop candle websocket: see logs",
                         )
             except (
                 ConnectionResetError,
@@ -2275,7 +2390,7 @@ class KCN:
         """Infinity run tasks."""
         async with asyncio.TaskGroup() as tg:
             tasks = [
-                tg.create_task(self.matching()),
+                tg.create_task(self.candle()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
             ]
@@ -2297,7 +2412,7 @@ async def main() -> Result[None, Exception]:
         for _ in await kcn.pre_init()
         for _ in kcn.logger_success("Pre-init OK!")
         for _ in await kcn.send_telegram_msg("KuCoin settings are OK!")
-        # for _ in await kcn.infinity_task()
+        for _ in await kcn.infinity_task()
     ):
         case Ok(None):
             pass
