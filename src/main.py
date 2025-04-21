@@ -246,6 +246,24 @@ class OrderChangeV2:
 
 
 @dataclass(frozen=True)
+class MarketCandle:
+    """."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """Parse response request."""
+
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            symbol: str
+            candles: list[str]
+
+        data: Data
+
+
+@dataclass(frozen=True)
 class ApiV1BulletPrivatePOST:
     """."""
 
@@ -261,9 +279,9 @@ class ApiV1BulletPrivatePOST:
             class Instance:
                 """."""
 
-                endpoint: str 
-                pingInterval: int 
-                pingTimeout: int 
+                endpoint: str
+                pingInterval: int
+                pingTimeout: int
 
             instanceServers: list[Instance] = field(default_factory=list[Instance])
             token: str = field(default="")
@@ -1073,27 +1091,50 @@ class KCN:
                 for _ in await self.welcome_processing_websocket(ws_inst)
                 # subscribe to topic
                 for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
-                for _ in await self.listen_event(ws_inst)
+                for _ in await self.listen_matching_event(ws_inst)
             ):
                 case Err(exc):
                     return Err(exc)
 
         return Ok(None)
 
+    def get_tunnel(
+        self: Self,
+        tunnelid: str,
+    ) -> Result[dict[str, str | bool], Exception]:
+        """Working with tunnel."""
+        return Ok(
+            {
+                "id": str(int(time() * 1000)),
+                "type": "openTunnel",
+                "newTunnelId": tunnelid,
+            },
+        )
+
     async def runtime_candle_ws(
         self: Self,
         ws: connect,
-        subsribe_msg: dict[str, str | bool],
     ) -> Result[None, Exception]:
         """Runtime listen websocket all time."""
+        tunnelid = "all_klines"
         async with ws as ws_inst:
             match await do_async(
                 Ok(None)
+                for tunnel_msg in self.get_tunnel(tunnelid)
+                for msg_subscribe_candle in self.get_msg_for_subscribe_candle(tunnelid)
                 # get welcome msg
                 for _ in await self.welcome_processing_websocket(ws_inst)
+                # tunnel create
+                for _ in await self.ack_processing_websocket(
+                    ws_inst,
+                    tunnel_msg,
+                )
                 # subscribe to topic
-                for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
-                for _ in await self.listen_event(ws_inst)
+                for _ in await self.ack_processing_websocket(
+                    ws_inst,
+                    msg_subscribe_candle,
+                )
+                for _ in await self.listen_candle_event(ws_inst)
             ):
                 case Err(exc):
                     return Err(exc)
@@ -1376,26 +1417,38 @@ class KCN:
                     logger.success(f"borrow on {data.matchSize}")
         return Ok(None)
 
-    async def event(
+    async def event_candll(
         self: Self,
-        data: OrderChangeV2.Res,
+        data: MarketCandle.Res,
     ) -> Result[None, Exception]:
         """Event matching order."""
-        if data.data.orderType == "limit":
-            match data.data.type:
-                case "filled":  # complete fill order
-                    match await self.event_filled(data.data):
-                        case Err(exc):
-                            logger.exception(exc)
-                case "match":  # partician fill order
-                    await self.event_matching(data.data)
+        logger.info(data)
         return Ok(None)
 
-    async def listen_event(
+    async def listen_candle_event(
         self: Self,
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
-        """Infinity loop for listen matching msgs."""
+        """Infinity loop for listen candle msgs."""
+        async for msg in ws_inst:
+            match await do_async(
+                Ok(None)
+                for value in self.parse_bytes_to_dict(msg)
+                for data_dataclass in self.convert_to_dataclass_from_dict(
+                    MarketCandle.Res,
+                    value,
+                )
+                for _ in await self.event_candll(data_dataclass)
+            ):
+                case Err(exc):
+                    return Err(exc)
+        return Ok(None)
+
+    async def listen_matching_event(
+        self: Self,
+        ws_inst: ClientConnection,
+    ) -> Result[None, Exception]:
+        """Infinity loop for listen candle msgs."""
         async for msg in ws_inst:
             match await do_async(
                 Ok(None)
@@ -1404,7 +1457,7 @@ class KCN:
                     OrderChangeV2.Res,
                     value,
                 )
-                for _ in await self.event(data_dataclass)
+                for _ in await self.event_matching(data_dataclass.data)
             ):
                 case Err(exc):
                     return Err(exc)
@@ -1549,8 +1602,18 @@ class KCN:
             for default_uuid4 in self.get_default_uuid4()
             for uuid_str in self.format_to_str_uuid(default_uuid4)
         )
+
+    def get_candles_for_kline(self: Self) -> Result[str, Exception]:
+        """."""
+        return Ok(
+            ",".join(
+                [f"{symbol}-USTD_1h" for symbol in self.book],
+            )
+        )
+
     def get_msg_for_subscribe_candle(
         self: Self,
+        tunnelid: str,
     ) -> Result[dict[str, str | bool], Exception]:
         """Get msg for subscribe to candle kucoin."""
         return do(
@@ -1558,9 +1621,10 @@ class KCN:
                 {
                     "id": uuid_str,
                     "type": "subscribe",
-                    "topic": "/spotMarket/tradeOrdersV2",
-                    "privateChannel": True,
-                    "response": True,
+                    "topic": f"/market/candles:{self.get_candles_for_kline()}",
+                    "privateChannel": False,
+                    "response": False,
+                    "tunnelId": tunnelid,
                 },
             )
             for default_uuid4 in self.get_default_uuid4()
@@ -1640,10 +1704,8 @@ class KCN:
                         bullet_public,
                     )
                     for ws in self.get_websocket(url_ws, ping_interval, ping_timeout)
-                    for msg_subscribe_candle in self.get_msg_for_subscribe_candle()
                     for _ in await self.runtime_candle_ws(
                         ws,
-                        msg_subscribe_candle,
                     )
                 ):
                     case Err(exc):
