@@ -1624,12 +1624,13 @@ class KCN:
                 {
                     "id": uuid_str,
                     "type": "subscribe",
-                    "topic": f"/market/candles:{self.get_candles_for_kline()}",
+                    "topic": f"/market/candles:{candles}",
                     "privateChannel": False,
                     "response": False,
                     "tunnelId": tunnelid,
                 },
             )
+            for candles in self.get_candles_for_kline()
             for default_uuid4 in self.get_default_uuid4()
             for uuid_str in self.format_to_str_uuid(default_uuid4)
         )
