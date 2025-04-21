@@ -1122,8 +1122,10 @@ class KCN:
             match await do_async(
                 Ok(None)
                 # get welcome msg
+                for _ in self.logger_info("welcome_processing_websocket")
                 for _ in await self.welcome_processing_websocket(ws_inst)
                 # tunnel create
+                for _ in self.logger_info("get_tunnel")
                 for tunnel_msg in self.get_tunnel(tunnelid)
                 for _ in await self.ack_processing_websocket(
                     ws_inst,
