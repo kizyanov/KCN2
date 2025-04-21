@@ -1626,7 +1626,7 @@ class KCN:
                     "type": "subscribe",
                     "topic": f"/market/candles:{candles}",
                     "privateChannel": False,
-                    "response": False,
+                    "response": True,
                     "tunnelId": tunnelid,
                 },
             )
