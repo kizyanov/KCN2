@@ -52,6 +52,7 @@ class Book:
     last_price: Decimal = field(default=Decimal("0"))
     baseincrement: Decimal = field(default=Decimal("0"))
     priceincrement: Decimal = field(default=Decimal("0"))
+    borrow: Decimal = field(default=Decimal("0"))
 
 
 @dataclass(frozen=True)
@@ -1139,19 +1140,20 @@ class KCN:
         """Build own structure.
 
         build inside book for tickets
-        book
-        {
+        book = {
             "ADA": {
                 "balance": Decimal,
                 "last": Decimal,
                 "baseincrement": Decimal,
                 "priceincrement": Decimal,
+                "borrow": Decimal,
             },
             "JUP": {
                 "balance": Decimal,
                 "last": Decimal,
                 "baseincrement": Decimal,
                 "priceincrement": Decimal,
+                "borrow": Decimal,
             }
         }
         book_orders = {
@@ -1241,20 +1243,20 @@ class KCN:
         self: Self,
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
-        """Event when order parted filled."""
+        """Event when order parted filled.
+
+        buy
+        - need repay margin assert
+        - decrease borrow field
+        """
         match do(
             Ok(symbol) for symbol in self.replace_quote_in_symbol_name(data.symbol)
         ):
             case Ok(symbol):
-                if symbol in self.book and data.matchSize:
-                    if data.side == "sell":
-                        # decrease token
-                        self.book[symbol].balance -= Decimal(data.matchSize)
-                        logger.success(f"Decrease balance on {data.matchSize}")
-                    else:
-                        # increase tokens
-                        self.book[symbol].balance += Decimal(data.matchSize)
-                        logger.success(f"Increase balance on {data.matchSize}")
+                if symbol in self.book and data.matchSize and data.side == "buy":
+                    self.book[symbol].borrow -= Decimal(data.matchSize)
+                    logger.success(f"borrow on {data.matchSize}")
+
         return Ok(None)
 
     async def event(
@@ -1590,9 +1592,14 @@ class KCN:
         ):
             case Ok(params_order):
                 async with asyncio.TaskGroup() as tg:
-                    tg.create_task(
-                        self.make_order_and_save_result(ticket, params_order["down"])
-                    )
+                    if self.book[ticket].borrow > 0:
+                        # has borrow of ticket
+                        tg.create_task(
+                            self.make_order_and_save_result(
+                                ticket,
+                                params_order["down"],
+                            )
+                        )
                     tg.create_task(
                         self.make_order_and_save_result(ticket, params_order["up"])
                     )
@@ -1624,6 +1631,18 @@ class KCN:
             return Err(exc)
         return Ok(None)
 
+    def fill_borrow_to_current_token(
+        self: Self,
+        symbol: str,
+        borrow: Decimal,
+    ) -> Result[None, Exception]:
+        """Fill borrow current symbol."""
+        try:
+            self.book[symbol].borrow = borrow
+        except IndexError as exc:
+            return Err(exc)
+        return Ok(None)
+
     def fill_balance_all_tokens(
         self: Self,
         data: list[ApiV1AccountsGET.Res.Data],
@@ -1643,12 +1662,40 @@ class KCN:
 
         return Ok(None)
 
+    def fill_borrow_all_tokens(
+        self: Self,
+        data: list[ApiV3MarginAccountsGET.Res.Data.Account],
+    ) -> Result[None, Exception]:
+        """Fill borrow to all tokens in book."""
+        for ticket in data:
+            match do(
+                Ok(None)
+                for borrow_decimal in self.data_to_decimal(ticket.liability)
+                for _ in self.fill_borrow_to_current_token(
+                    ticket.currency,
+                    borrow_decimal,
+                )
+            ):
+                case Err(exc):
+                    return Err(exc)
+
+        return Ok(None)
+
     def filter_ticket_by_book_balance(
         self: Self,
         data: ApiV1AccountsGET.Res,
     ) -> Result[list[ApiV1AccountsGET.Res.Data], Exception]:
         """."""
         return Ok([ticket for ticket in data.data if ticket.currency in self.book])
+
+    def filter_ticket_by_book_borrow(
+        self: Self,
+        data: ApiV3MarginAccountsGET.Res,
+    ) -> Result[list[ApiV3MarginAccountsGET.Res.Data.Account], Exception]:
+        """."""
+        return Ok(
+            [ticket for ticket in data.data.accounts if ticket.currency in self.book]
+        )
 
     async def fill_balance(self: Self) -> Result[None, Exception]:
         """Fill all balance by ENVs."""
@@ -1659,6 +1706,21 @@ class KCN:
             )
             for ticket_to_fill in self.filter_ticket_by_book_balance(balance_accounts)
             for _ in self.fill_balance_all_tokens(ticket_to_fill)
+        )
+
+    async def fill_borrow(self: Self) -> Result[None, Exception]:
+        """Fill all borrow by ENVs."""
+        return await do_async(
+            Ok(None)
+            for borrow_balance_accounts in await self.get_api_v3_margin_accounts(
+                params={
+                    "quoteCurrency": "USDT",
+                },
+            )
+            for borrow_to_fill in self.filter_ticket_by_book_borrow(
+                borrow_balance_accounts
+            )
+            for _ in self.fill_borrow_all_tokens(borrow_to_fill)
         )
 
     def fill_one_symbol_base_increment(
@@ -1857,7 +1919,7 @@ class KCN:
         return do(
             Ok(
                 OrderParam(
-                    side='sell',
+                    side="sell",
                     price=last_price_str,
                     size=size_str,
                 ),
@@ -1868,7 +1930,10 @@ class KCN:
                 self.book[ticket].priceincrement,
             )
             for last_price_str in self.decimal_to_str(last_price_quantize)
-            for raw_size in self.divide(Decimal('10.1'), last_price_quantize)
+            for raw_size in self.divide(
+                self.BASE_KEEP * Decimal("1.01"),
+                last_price_quantize,
+            )
             for size in self.quantize_plus(
                 raw_size,
                 self.book[ticket].baseincrement,
@@ -1884,7 +1949,7 @@ class KCN:
         return do(
             Ok(
                 OrderParam(
-                    side='buy',
+                    side="buy",
                     price=last_price_str,
                     size=size_str,
                 ),
@@ -1895,7 +1960,7 @@ class KCN:
                 self.book[ticket].priceincrement,
             )
             for last_price_str in self.decimal_to_str(last_price_quantize)
-            for raw_size in self.divide(Decimal('10'), last_price_quantize)
+            for raw_size in self.divide(self.BASE_KEEP, last_price_quantize)
             for size in self.quantize_plus(
                 raw_size,
                 self.book[ticket].baseincrement,
@@ -2041,6 +2106,7 @@ class KCN:
             for _ in await self.fill_balance()
             for _ in await self.fill_increment()
             for _ in await self.fill_last_price()
+            for _ in await self.fill_borrow()
         )
 
     async def sleep_to(self: Self, *, sleep_on: int = 1) -> Result[None, Exception]:
@@ -2133,7 +2199,6 @@ class KCN:
                 tg.create_task(self.matching()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
-                tg.create_task(self.reclaim_orders()),
             ]
 
         for task in tasks:
@@ -2152,7 +2217,7 @@ async def main() -> Result[None, Exception]:
         Ok(None)
         for _ in await kcn.pre_init()
         for _ in kcn.logger_success("Pre-init OK!")
-        for _ in await kcn.send_telegram_msg("Settings are OK!")
+        for _ in await kcn.send_telegram_msg("KuCoin settings are OK!")
         for _ in await kcn.infinity_task()
     ):
         case Ok(None):
