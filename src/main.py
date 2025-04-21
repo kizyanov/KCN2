@@ -258,7 +258,7 @@ class MarketCandle:
             """."""
 
             symbol: str
-            candles: list[str]
+            price: str
 
         data: Data
 
@@ -1610,7 +1610,7 @@ class KCN:
         """."""
         return Ok(
             ",".join(
-                [f"{symbol}-USDT_1hour" for symbol in self.book],
+                [f"{symbol}-USDT" for symbol in self.book],
             )
         )
 
@@ -1624,7 +1624,7 @@ class KCN:
                 {
                     "id": uuid_str,
                     "type": "subscribe",
-                    "topic": f"/market/candles:{candles}",
+                    "topic": f"/market/match:{candles}",
                     "privateChannel": False,
                     "response": True,
                     "tunnelId": tunnelid,
