@@ -1121,15 +1121,17 @@ class KCN:
         async with ws as ws_inst:
             match await do_async(
                 Ok(None)
-                for tunnel_msg in self.get_tunnel(tunnelid)
-                for msg_subscribe_candle in self.get_msg_for_subscribe_candle(tunnelid)
                 # get welcome msg
                 for _ in await self.welcome_processing_websocket(ws_inst)
                 # tunnel create
+                for tunnel_msg in self.get_tunnel(tunnelid)
                 for _ in await self.ack_processing_websocket(
                     ws_inst,
                     tunnel_msg,
                 )
+                for _ in self.logger_info("send tunnel info")
+                for msg_subscribe_candle in self.get_msg_for_subscribe_candle(tunnelid)
+                for _ in self.logger_success(msg_subscribe_candle)
                 # subscribe to topic
                 for _ in await self.ack_processing_websocket(
                     ws_inst,
