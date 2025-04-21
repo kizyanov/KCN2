@@ -2185,6 +2185,7 @@ class KCN:
             for _ in await self.fill_increment()
             for _ in await self.fill_last_price()
             for _ in await self.fill_borrow()
+            for _ in self.logger_success(self.book)
         )
 
     async def sleep_to(self: Self, *, sleep_on: int = 1) -> Result[None, Exception]:
@@ -2296,7 +2297,7 @@ async def main() -> Result[None, Exception]:
         for _ in await kcn.pre_init()
         for _ in kcn.logger_success("Pre-init OK!")
         for _ in await kcn.send_telegram_msg("KuCoin settings are OK!")
-        for _ in await kcn.infinity_task()
+        # for _ in await kcn.infinity_task()
     ):
         case Ok(None):
             pass
