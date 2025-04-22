@@ -288,7 +288,7 @@ class ApiV1BulletPrivatePOST:
 
         data: Data
         code: str
-        msg: str
+        msg: str | None
 
 
 class KCN:
