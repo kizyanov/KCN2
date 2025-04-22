@@ -2313,6 +2313,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         for assed in data.data.accounts:
+            logger.warning(assed)
             if assed.currency in self.book:
                 min_liability_available = min(
                     Decimal(assed.liability),
