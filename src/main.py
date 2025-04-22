@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """KCN2 trading bot for kucoin."""
 
+from itertools import batched
 import asyncio
 import socket
 from base64 import b64encode
@@ -594,6 +595,10 @@ class KCN:
             for checked_dict in self.check_response_code(data_dataclass)
         )
 
+    def get_all_token_for_matching(self: Self) -> Result[list[str], Exception]:
+        """."""
+        return Ok([f"{symbol}-USDT" for symbol in self.book])
+
     async def get_api_v1_orders(
         self: Self,
         params: dict[str, str],
@@ -1120,7 +1125,7 @@ class KCN:
         logger.warning("runtime_candle_ws")
         async with ws as ws_inst:
             match await do_async(
-                Ok(None)
+                Ok(candles)
                 # get welcome msg
                 for _ in self.logger_info("welcome_processing_websocket")
                 for _ in await self.welcome_processing_websocket(ws_inst)
@@ -1129,17 +1134,30 @@ class KCN:
                 for tunnel_msg in self.get_tunnel(tunnelid)
                 for _ in await self.send_data_to_ws(ws_inst, tunnel_msg)
                 for _ in self.logger_info("send tunnel info")
-                for msg_subscribe_candle in self.get_msg_for_subscribe_candle(tunnelid)
-                for _ in self.logger_success(msg_subscribe_candle)
-                # subscribe to topic
-                for _ in await self.ack_processing_websocket(
-                    ws_inst,
-                    msg_subscribe_candle,
-                )
-                for _ in await self.listen_candle_event(ws_inst)
+                for candles in self.get_all_token_for_matching()
             ):
-                case Err(exc):
-                    return Err(exc)
+                case Ok(candles):
+                    for msgs in batched(candles, 100):
+                        logger.info(f"{len(msgs)} {msgs}")
+                        match await do_async(
+                            Ok(_)
+                            for msg_subscribe_candle in self.get_msg_for_subscribe_candle(
+                                msgs, tunnelid
+                            )
+                            for _ in self.logger_success(msg_subscribe_candle)
+                            # subscribe to topic
+                            for _ in await self.send_data_to_ws(
+                                ws_inst, msg_subscribe_candle
+                            )
+                        ):
+                            case Err(exc):
+                                logger.exception(exc)
+
+                    match await do_async(
+                        Ok(_) for _ in await self.listen_candle_event(ws_inst)
+                    ):
+                        case Err(exc):
+                            return Err(exc)
 
         return Ok(None)
 
@@ -1425,14 +1443,13 @@ class KCN:
     ) -> Result[None, Exception]:
         """Event matching order."""
         match do(
-            Ok(symbol)
-            for symbol in self.replace_quote_in_symbol_name(data.data.symbol)
+            Ok(symbol) for symbol in self.replace_quote_in_symbol_name(data.data.symbol)
         ):
             case Ok(symbol):
                 if symbol in self.book:
                     if self.book[symbol].last_price > Decimal(data.data.price):
                         logger.warning(f"New low price:{symbol} to {data.data.price}")
-                        self.book[symbol].last_price = Decimal(data.data.price)                        
+                        self.book[symbol].last_price = Decimal(data.data.price)
         return Ok(None)
 
     async def listen_candle_event(
@@ -1442,6 +1459,7 @@ class KCN:
         """Infinity loop for listen candle msgs."""
         logger.warning("listen_candle_event")
         async for msg in ws_inst:
+            logger.debug(msg)
             match await do_async(
                 Ok(None)
                 for value in self.parse_bytes_to_dict(msg)
@@ -1614,16 +1632,16 @@ class KCN:
             for uuid_str in self.format_to_str_uuid(default_uuid4)
         )
 
-    def get_candles_for_kline(self: Self) -> Result[str, Exception]:
+    def get_candles_for_kline(
+        self: Self,
+        raw_candle: list[str],
+    ) -> Result[str, Exception]:
         """."""
-        return Ok(
-            ",".join(
-                [f"{symbol}-USDT" for symbol in self.book],
-            )
-        )
+        return Ok(",".join(raw_candle))
 
     def get_msg_for_subscribe_candle(
         self: Self,
+        raw_candle: list[str],
         tunnelid: str,
     ) -> Result[dict[str, str | bool], Exception]:
         """Get msg for subscribe to candle kucoin."""
@@ -1634,11 +1652,11 @@ class KCN:
                     "type": "subscribe",
                     "topic": f"/market/match:{candles}",
                     "privateChannel": False,
-                    "response": True,
+                    "response": False,
                     "tunnelId": tunnelid,
                 },
             )
-            for candles in self.get_candles_for_kline()
+            for candles in self.get_candles_for_kline(raw_candle)
             for default_uuid4 in self.get_default_uuid4()
             for uuid_str in self.format_to_str_uuid(default_uuid4)
         )
