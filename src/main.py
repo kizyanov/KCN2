@@ -1391,7 +1391,7 @@ class KCN:
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
         """Event when order full filled."""
-        return await do_async(
+        match await do_async(
             Ok(None)
             for symbol_name in self.replace_quote_in_symbol_name(data.symbol)
             # update last price
@@ -1406,8 +1406,12 @@ class KCN:
             )
             for _ in await self.massive_cancel_order(loses_orders)
             # create new orders
-            for _ in await self.make_updown_margin_order(symbol_name)
-        )
+            for _ in await self.make_sell_margin_order(symbol_name)
+            for _ in await self.make_buy_margin_order(symbol_name)
+        ):
+            case Err(exc):
+                logger.exception(exc)
+        return Ok(None)
 
     async def event_matching(
         self: Self,
@@ -1785,19 +1789,24 @@ class KCN:
             for client_id in self.format_to_str_uuid(default_uuid4)
         )
 
-    def save_order_id(
+    def save_sell_order_id(
         self: Self,
         symbol: str,
-        side: str,
         order_id: str,
     ) -> Result[None, Exception]:
-        """Save order id."""
+        """Save sell order id."""
         if symbol in self.book:
-            if side == "sell":
-                self.book_orders[symbol]["sell"] = order_id
-            else:
-                self.book_orders[symbol]["buy"] = order_id
+            self.book_orders[symbol]["sell"] = order_id
+        return Ok(None)
 
+    def save_buy_order_id(
+        self: Self,
+        symbol: str,
+        order_id: str,
+    ) -> Result[None, Exception]:
+        """Save buy order id."""
+        if symbol in self.book:
+            self.book_orders[symbol]["buy"] = order_id
         return Ok(None)
 
     async def wrap_post_api_v3_hf_margin_order(
@@ -1819,40 +1828,13 @@ class KCN:
         await self.send_telegram_msg(error_msg)
         return Err(Exception(error_msg))
 
-    async def make_order_and_save_result(
+    async def make_buy_margin_order(
         self: Self,
         ticket: str,
-        params_order: dict[str, dict[str, str | bool]],
-        side: str,
     ) -> Result[None, Exception]:
         """."""
         match await do_async(
-            Ok(None)
-            for order_id in await self.wrap_post_api_v3_hf_margin_order(
-                params_order[side]
-            )
-            for _ in self.save_order_id(ticket, side, order_id.data.orderId)
-        ):
-            case Err(exc):
-                logger.exception(exc)
-        return Ok(None)
-
-    async def make_updown_margin_order(
-        self: Self,
-        ticket: str,
-    ) -> Result[None, Exception]:
-        """Make up and down limit order."""
-        match await do_async(
-            Ok({"buy": params_order_down, "sell": params_order_up})
-            # for up
-            for order_up in self.calc_up(ticket)
-            for params_order_up in self.complete_margin_order(
-                side=order_up.side,
-                symbol=f"{ticket}-USDT",
-                price=order_up.price,
-                size=order_up.size,
-            )
-            # for down
+            Ok(_)
             for order_down in self.calc_down(ticket)
             for params_order_down in self.complete_margin_order(
                 side=order_down.side,
@@ -1860,22 +1842,33 @@ class KCN:
                 price=order_down.price,
                 size=order_down.size,
             )
+            for order_id in await self.wrap_post_api_v3_hf_margin_order(
+                params_order_down
+            )
+            for _ in self.save_buy_order_id(ticket, order_id.data.orderId)
         ):
-            case Ok(params_order):
-                async with asyncio.TaskGroup() as tg:
-                    if self.book[ticket].borrow > 0:
-                        # has borrow of ticket
-                        tg.create_task(
-                            self.make_order_and_save_result(
-                                ticket,
-                                params_order,
-                                "buy",
-                            )
-                        )
-                    tg.create_task(
-                        self.make_order_and_save_result(ticket, params_order, "sell")
-                    )
+            case Err(exc):
+                await self.send_telegram_msg(f"{exc}")
+                logger.exception(exc)
+        return Ok(None)
 
+    async def make_sell_margin_order(
+        self: Self,
+        ticket: str,
+    ) -> Result[None, Exception]:
+        """."""
+        match await do_async(
+            Ok(_)
+            for order_up in self.calc_up(ticket)
+            for params_order_up in self.complete_margin_order(
+                side=order_up.side,
+                symbol=f"{ticket}-USDT",
+                price=order_up.price,
+                size=order_up.size,
+            )
+            for order_id in await self.wrap_post_api_v3_hf_margin_order(params_order_up)
+            for _ in self.save_sell_order_id(ticket, order_id.data.orderId)
+        ):
             case Err(exc):
                 await self.send_telegram_msg(f"{exc}")
                 logger.exception(exc)
@@ -1887,8 +1880,8 @@ class KCN:
         await asyncio.sleep(5)
 
         for ticket in self.book:
-            await self.make_updown_margin_order(ticket)
-
+            await self.make_sell_margin_order(ticket)
+            await self.make_buy_margin_order(ticket)
         return Ok(None)
 
     def fill_balance_to_current_token(
@@ -2173,16 +2166,6 @@ class KCN:
             return Ok(balance - need_balance)
         return Ok(need_balance - balance)
 
-    def choise_side(
-        self: Self,
-        balance: Decimal,
-        need_balance: Decimal,
-    ) -> Result[str, Exception]:
-        """Choise sell or buy side."""
-        if balance > need_balance:
-            return Ok("sell")
-        return Ok("buy")
-
     def calc_up(
         self: Self,
         ticket: str,
@@ -2460,7 +2443,8 @@ class KCN:
                                     last_price_decimal,
                                 )
                                 for _ in await self.fill_last_price()
-                                for _ in await self.make_updown_margin_order(symbol)
+                                for _ in await self.make_sell_margin_order(symbol)
+                                for _ in await self.make_buy_margin_order(symbol)
                             )
 
             await asyncio.sleep(60)
