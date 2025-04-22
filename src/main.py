@@ -1424,7 +1424,15 @@ class KCN:
         data: MarketCandle.Res,
     ) -> Result[None, Exception]:
         """Event matching order."""
-        logger.info(data)
+        match do(
+            Ok(symbol)
+            for symbol in self.replace_quote_in_symbol_name(data.data.symbol)
+        ):
+            case Ok(symbol):
+                if symbol in self.book:
+                    if self.book[symbol].last_price > Decimal(data.data.price):
+                        logger.warning(f"New low price:{symbol} to {data.data.price}")
+                        self.book[symbol].last_price = Decimal(data.data.price)                        
         return Ok(None)
 
     async def listen_candle_event(
