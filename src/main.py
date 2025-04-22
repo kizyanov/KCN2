@@ -1392,7 +1392,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Event when order full filled."""
         match await do_async(
-            Ok(None)
+            Ok(symbol_name)
             for symbol_name in self.replace_quote_in_symbol_name(data.symbol)
             # update last price
             for price_decimal in self.data_to_decimal(data.price or "")
@@ -1407,8 +1407,15 @@ class KCN:
             for _ in await self.massive_cancel_order(loses_orders)
             # create new orders
             for _ in await self.make_sell_margin_order(symbol_name)
-            for _ in await self.make_buy_margin_order(symbol_name)
         ):
+            case Ok(symbol_name):
+                if self.book[symbol_name].borrow > Decimal("0"):
+                    match await do_async(
+                        Ok(_) for _ in await self.make_buy_margin_order(symbol_name)
+                    ):
+                        case Err(exc):
+                            logger.exception(exc)
+
             case Err(exc):
                 logger.exception(exc)
         return Ok(None)
