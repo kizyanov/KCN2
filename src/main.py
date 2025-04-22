@@ -2265,19 +2265,21 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         for assed in data.data.accounts:
-            min_liability_available = min(assed.liability, assed.available)
-            if min_liability_available != Decimal("0"):
-                match await do_async(
-                    Ok(_)
-                    for _ in await self.post_api_v3_margin_repay(
-                        data={
-                            "currency": assed.currency,
-                            "size": float(min_liability_available),
-                        }
-                    )
-                ):
-                    case Err(exc):
-                        logger.exception(exc)
+            if assed in self.book:
+                min_liability_available = min(assed.liability, assed.available)
+                logger.debug(f"{min_liability_available=}")
+                if min_liability_available != Decimal("0"):
+                    match await do_async(
+                        Ok(_)
+                        for _ in await self.post_api_v3_margin_repay(
+                            data={
+                                "currency": assed.currency,
+                                "size": float(min_liability_available),
+                            }
+                        )
+                    ):
+                        case Err(exc):
+                            logger.exception(exc)
         return Ok(None)
 
     async def repay_assets(self: Self) -> Result[None, Exception]:
