@@ -630,6 +630,7 @@ class KCN:
     async def delete_api_v3_hf_margin_orders(
         self: Self,
         order_id: str,
+        params: dict[str, str],
     ) -> Result[ApiV3HfMarginOrdersDELETE.Res, Exception]:
         """Cancel order by `id`.
 
@@ -639,7 +640,9 @@ class KCN:
         method = "DELETE"
         return await do_async(
             Ok(checked_dict)
-            for full_url in self.get_full_url(self.BASE_URL, uri)
+            for params_in_url in self.get_url_params_as_str(params)
+            for uri_params in self.cancatinate_str(uri, params_in_url)
+            for full_url in self.get_full_url(self.BASE_URL, uri_params)
             for now_time in self.get_now_time()
             for data_to_sign in self.cancatinate_str(now_time, method, uri)
             for headers in self.get_headers_auth(
@@ -1445,7 +1448,10 @@ class KCN:
                     self.book[symbol].last_price = Decimal(data.data.price)
                     await self.massive_cancel_order(
                         data=[
-                            self.book_orders[symbol]["sell"],
+                            {
+                                "id": self.book_orders[symbol]["sell"],
+                                "symbol": data.data.symbol,
+                            },
                         ]
                     )
                     await self.make_sell_margin_order(symbol)
@@ -1605,11 +1611,15 @@ class KCN:
 
     async def massive_cancel_order(
         self: Self,
-        data: list[str],
+        data: list[dict[str, str]],
     ) -> Result[None, Exception]:
         """Cancel all order in data list."""
-        for order_id in data:
-            await self.delete_api_v3_hf_margin_orders(order_id)
+        for order in data:
+            for order_id, symbol in order.items():
+                await self.delete_api_v3_hf_margin_orders(
+                    order_id,
+                    {"symbol": symbol},
+                )
         return Ok(None)
 
     def get_msg_for_subscribe_matching(
@@ -2260,11 +2270,11 @@ class KCN:
     def filter_open_order_by_symbol(
         self: Self,
         data: list[ApiV3HfMarginOrdersActiveGET.Res.Data],
-    ) -> Result[list[str], Exception]:
+    ) -> Result[list[dict[str, str]], Exception]:
         """Filted open order by exist in book."""
         return Ok(
             [
-                order.id
+                {"id": order.id, "symbol": order.symbol}
                 for order in data
                 if order.symbol.replace("-USDT", "") in self.book
             ]
@@ -2305,7 +2315,9 @@ class KCN:
         """."""
         for assed in data.data.accounts:
             if assed.currency in self.book:
-                min_liability_available = min(Decimal(assed.liability), Decimal(assed.available))
+                min_liability_available = min(
+                    Decimal(assed.liability), Decimal(assed.available)
+                )
                 logger.debug(f"{min_liability_available=}")
                 if min_liability_available != Decimal("0"):
                     match await do_async(
