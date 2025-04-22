@@ -1390,7 +1390,7 @@ class KCN:
                             f"Increase borrow balance on {data.data.matchSize}"
                         )
                     else:
-                        self.book[symbol].balance -= Decimal(data.data.matchSize)
+                        self.book[symbol].borrow -= Decimal(data.data.matchSize)
                         logger.success(
                             f"Decrease borrow balance on {data.data.matchSize}"
                         )
@@ -1871,7 +1871,13 @@ class KCN:
 
         for ticket in self.book:
             await self.make_sell_margin_order(ticket)
-            await self.make_buy_margin_order(ticket)
+            if self.book[ticket].borrow > Decimal("0"):
+                # if need borrow assert
+                match await do_async(
+                    Ok(_) for _ in await self.make_buy_margin_order(ticket)
+                ):
+                    case Err(exc):
+                        logger.exception(exc)
         return Ok(None)
 
     def fill_balance_to_current_token(
@@ -2360,9 +2366,9 @@ class KCN:
         """Infinity run tasks."""
         async with asyncio.TaskGroup() as tg:
             tasks = [
+                tg.create_task(self.matching()),
                 tg.create_task(self.repay_assets()),
                 tg.create_task(self.candle()),
-                tg.create_task(self.matching()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
             ]
