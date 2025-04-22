@@ -144,8 +144,8 @@ class ApiV2SymbolsGET:
 
 
 @dataclass(frozen=True)
-class ApiV1OrdersDELETE:
-    """https://www.kucoin.com/docs/rest/spot-trading/orders/cancel-order-by-orderid."""
+class ApiV3HfMarginOrdersDELETE:
+    """https://www.kucoin.com/docs-new/rest/margin-trading/orders/cancel-order-by-orderld."""
 
     @dataclass(frozen=True)
     class Res:
@@ -156,8 +156,8 @@ class ApiV1OrdersDELETE:
 
 
 @dataclass(frozen=True)
-class ApiV1OrdersGET:
-    """https://www.kucoin.com/docs/rest/spot-trading/orders/get-order-list."""
+class ApiV3HfMarginOrdersActiveGET:
+    """https://www.kucoin.com/docs-new/rest/margin-trading/orders/get-open-orders."""
 
     @dataclass(frozen=True)
     class Res:
@@ -167,16 +167,10 @@ class ApiV1OrdersGET:
         class Data:
             """."""
 
-            @dataclass(frozen=True)
-            class Item:
-                """."""
+            id: str
+            symbol: str
 
-                id: str
-                symbol: str
-
-            items: list[Item]
-
-        data: Data
+        data: list[Data]
         code: str
         msg: str | None
 
@@ -544,15 +538,15 @@ class KCN:
         """."""
         return Ok([f"{symbol}-USDT" for symbol in self.book])
 
-    async def get_api_v1_orders(
+    async def get_api_v3_hf_margin_orders_active(
         self: Self,
         params: dict[str, str],
-    ) -> Result[ApiV1OrdersGET.Res, Exception]:
+    ) -> Result[ApiV3HfMarginOrdersActiveGET.Res, Exception]:
         """Get all orders by params.
 
-        https://www.kucoin.com/docs/rest/spot-trading/orders/get-order-list
+        https://www.kucoin.com/docs-new/rest/margin-trading/orders/get-open-orders
         """
-        uri = "/api/v1/orders"
+        uri = "/api/v3/hf/margin/orders/active"
         method = "GET"
         return await do_async(
             Ok(result)
@@ -572,21 +566,21 @@ class KCN:
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
             for data_dataclass in self.convert_to_dataclass_from_dict(
-                ApiV1OrdersGET.Res,
+                ApiV3HfMarginOrdersActiveGET.Res,
                 response_dict,
             )
             for result in self.check_response_code(data_dataclass)
         )
 
-    async def delete_api_v1_order(
+    async def delete_api_v3_hf_margin_orders(
         self: Self,
         order_id: str,
-    ) -> Result[ApiV1OrdersDELETE.Res, Exception]:
+    ) -> Result[ApiV3HfMarginOrdersDELETE.Res, Exception]:
         """Cancel order by `id`.
 
-        https://www.kucoin.com/docs/rest/spot-trading/orders/cancel-order-by-orderid
+        https://www.kucoin.com/docs-new/rest/margin-trading/orders/cancel-order-by-orderld
         """
-        uri = f"/api/v1/orders/{order_id}"
+        uri = f"/api/v3/hf/margin/orders/{order_id}"
         method = "DELETE"
         return await do_async(
             Ok(checked_dict)
@@ -604,7 +598,7 @@ class KCN:
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
             for data_dataclass in self.convert_to_dataclass_from_dict(
-                ApiV1OrdersDELETE.Res,
+                ApiV3HfMarginOrdersDELETE.Res,
                 response_dict,
             )
             for checked_dict in self.check_response_code(data_dataclass)
@@ -642,7 +636,7 @@ class KCN:
     ) -> Result[ApiV3MarginAccountsGET.Res, Exception]:
         """Get margin account user data.
 
-        https://www.kucoin.com/docs/rest/funding/funding-overview/get-account-detail-cross-margin
+        https://www.kucoin.com/docs-new/rest/account-info/account-funding/get-account-cross-margin
         """
         uri = "/api/v3/margin/accounts"
         method = "GET"
@@ -675,7 +669,7 @@ class KCN:
     ) -> Result[ApiV1BulletPrivatePOST.Res, Exception]:
         """Get tokens for private channel.
 
-        https://www.kucoin.com/docs/websocket/basic-info/apply-connect-token/private-channels-authentication-request-required-
+        https://www.kucoin.com/docs-new/websocket-api/base-info/get-private-token-spot-margin
         """
         uri = "/api/v1/bullet-private"
         method = "POST"
@@ -706,7 +700,7 @@ class KCN:
     ) -> Result[ApiV1BulletPrivatePOST.Res, Exception]:
         """Get tokens for private channel.
 
-        https://www.kucoin.com/docs/websocket/basic-info/apply-connect-token/public-token-no-authentication-required-
+        https://www.kucoin.com/docs-new/websocket-api/base-info/get-public-token-spot-margin
         """
         uri = "/api/v1/bullet-public"
         method = "POST"
@@ -732,7 +726,7 @@ class KCN:
     ) -> Result[ApiV1MarketAllTickers.Res, Exception]:
         """Get all tickers with last price.
 
-        https://www.kucoin.com/docs/rest/spot-trading/market-data/get-all-tickers
+        https://www.kucoin.com/docs-new/rest/spot-trading/market-data/get-all-tickers
         """
         uri = "/api/v1/market/allTickers"
         method = "GET"
@@ -1559,7 +1553,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Cancel all order in data list."""
         for order_id in data:
-            await self.delete_api_v1_order(order_id)
+            await self.delete_api_v3_hf_margin_orders(order_id)
         return Ok(None)
 
     def get_msg_for_subscribe_matching(
@@ -2188,9 +2182,9 @@ class KCN:
 
     async def get_all_open_orders(
         self: Self,
-    ) -> Result[list[ApiV1OrdersGET.Res.Data.Item], Exception]:
+    ) -> Result[list[ApiV3HfMarginOrdersActiveGET.Res.Data], Exception]:
         """Get all open orders."""
-        open_orders: list[ApiV1OrdersGET.Res.Data.Item] = []
+        open_orders: list[ApiV3HfMarginOrdersActiveGET.Res.Data] = []
         pagesize = 500
         currentpage = 1
         while True:
@@ -2198,9 +2192,8 @@ class KCN:
                 Ok(orders_for_cancel)
                 for page_size_str in self.to_str(pagesize)
                 for current_page_str in self.to_str(currentpage)
-                for orders_for_cancel in await self.get_api_v1_orders(
+                for orders_for_cancel in await self.get_api_v3_hf_margin_orders_active(
                     params={
-                        "status": "active",
                         "tradeType": "MARGIN_TRADE",
                         "pageSize": page_size_str,
                         "currentPage": current_page_str,
@@ -2208,18 +2201,18 @@ class KCN:
                 )
             ):
                 case Ok(res):
-                    if len(res.data.items) == 0:
+                    if len(res.data) == 0:
                         break
 
                     currentpage += 1
-                    open_orders += res.data.items
+                    open_orders += res.data
                 case Err(exc):
                     return Err(exc)
         return Ok(open_orders)
 
     def filter_open_order_by_symbol(
         self: Self,
-        data: list[ApiV1OrdersGET.Res.Data.Item],
+        data: list[ApiV3HfMarginOrdersActiveGET.Res.Data],
     ) -> Result[list[str], Exception]:
         """Filted open order by exist in book."""
         return Ok(
@@ -2249,7 +2242,7 @@ class KCN:
             for _ in await self.sleep_to(sleep_on=5)
             for _ in await self.fill_borrow()
             for _ in await self.fill_increment()
-            for _ in await self.fill_last_price()            
+            for _ in await self.fill_last_price()
             for _ in self.logger_success(self.book)
         )
 
@@ -2264,7 +2257,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         for assed in data.data.accounts:
-            if assed in self.book:
+            if assed.currency in self.book:
                 min_liability_available = min(assed.liability, assed.available)
                 logger.debug(f"{min_liability_available=}")
                 if min_liability_available != Decimal("0"):
