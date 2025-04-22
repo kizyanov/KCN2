@@ -609,7 +609,7 @@ class KCN:
     ) -> Result[ApiV2SymbolsGET.Res, Exception]:
         """Get symbol list.
 
-        https://www.kucoin.com/docs/rest/spot-trading/market-data/get-symbols-list
+        https://www.kucoin.com/docs-new/rest/spot-trading/market-data/get-all-symbols
         """
         uri = "/api/v2/symbols"
         method = "GET"
