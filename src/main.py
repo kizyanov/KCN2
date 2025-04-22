@@ -1615,7 +1615,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Cancel all order in data list."""
         for order in data:
-            for order_id, symbol in order.items():
+            for order_id, symbol in order.values():
                 await self.delete_api_v3_hf_margin_orders(
                     order_id,
                     {"symbol": symbol},
