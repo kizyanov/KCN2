@@ -1409,7 +1409,6 @@ class KCN:
         """Infinity loop for listen candle msgs."""
         logger.warning("listen_candle_event")
         async for msg in ws_inst:
-            logger.debug(msg)
             match await do_async(
                 Ok(None)
                 for value in self.parse_bytes_to_dict(msg)
