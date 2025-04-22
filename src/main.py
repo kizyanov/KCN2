@@ -2304,7 +2304,7 @@ class KCN:
         """."""
         for assed in data.data.accounts:
             if assed.currency in self.book:
-                min_liability_available = min(assed.liability, assed.available)
+                min_liability_available = min(Decimal(assed.liability), Decimal(assed.available))
                 logger.debug(f"{min_liability_available=}")
                 if min_liability_available != Decimal("0"):
                     match await do_async(
