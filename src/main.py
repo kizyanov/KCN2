@@ -1425,8 +1425,12 @@ class KCN:
                 ):
                     logger.warning(f"New low price:{symbol} to {data.data.price}")
                     self.book[symbol].last_price = Decimal(data.data.price)
-                    # need create new order by new latest_price
-                    # need delete old order
+                    await self.massive_cancel_order(
+                        data=[
+                            self.book_orders[symbol]["sell"],
+                        ]
+                    )
+                    await self.make_sell_margin_order(symbol)
         return Ok(None)
 
     async def listen_candle_event(
