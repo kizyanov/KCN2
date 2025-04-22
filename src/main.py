@@ -1412,30 +1412,7 @@ class KCN:
         self: Self,
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
-        """Event when order parted filled.
-
-        buy
-        - need repay margin assert
-        - decrease borrow field
-        """
-        match do(
-            Ok(symbol) for symbol in self.replace_quote_in_symbol_name(data.symbol)
-        ):
-            case Ok(symbol):
-                if symbol in self.book and data.matchSize and data.side == "buy":
-                    match await do_async(
-                        Ok(_)
-                        for _ in await self.post_api_v3_margin_repay(
-                            data={
-                                "currency": symbol,
-                                "size": int(data.matchSize),
-                            }
-                        )
-                    ):
-                        case Err(exc):
-                            logger.exception(exc)
-                    self.book[symbol].borrow -= Decimal(data.matchSize)
-                    logger.success(f"borrow on {data.matchSize}")
+        """Event when order parted filled."""
         return Ok(None)
 
     async def event_candll(
