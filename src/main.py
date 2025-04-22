@@ -2250,6 +2250,7 @@ class KCN:
             for _ in await self.fill_borrow()
             for _ in await self.fill_increment()
             for _ in await self.fill_last_price()
+            for _ in await self.repay_assets()
             for _ in self.logger_success(self.book)
         )
 
@@ -2299,7 +2300,6 @@ class KCN:
         async with asyncio.TaskGroup() as tg:
             tasks = [
                 tg.create_task(self.matching()),
-                tg.create_task(self.repay_assets()),
                 tg.create_task(self.candle()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
