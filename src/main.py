@@ -1396,7 +1396,7 @@ class KCN:
                 ):
                     logger.warning(f"New low price:{symbol} to {data.data.price}")
                     self.book[symbol].last_price = Decimal(data.data.price)
-                    # need create new order by new latest_price 
+                    # need create new order by new latest_price
                     # need delete old order
         return Ok(None)
 
