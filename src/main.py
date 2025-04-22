@@ -49,7 +49,6 @@ class AlertestToken:
 class Book:
     """Store data for each token."""
 
-    balance: Decimal
     last_price: Decimal
     baseincrement: Decimal
     priceincrement: Decimal
@@ -1250,14 +1249,12 @@ class KCN:
         build inside book for tickets
         book = {
             "ADA": {
-                "balance": Decimal,
                 "last": Decimal,
                 "baseincrement": Decimal,
                 "priceincrement": Decimal,
                 "borrow": Decimal,
             },
             "JUP": {
-                "balance": Decimal,
                 "last": Decimal,
                 "baseincrement": Decimal,
                 "priceincrement": Decimal,
@@ -1277,7 +1274,6 @@ class KCN:
         """
         self.book: dict[str, Book] = {
             ticket: Book(
-                balance=Decimal("0"),
                 last_price=Decimal("0"),
                 baseincrement=Decimal("0"),
                 borrow=Decimal("0"),
@@ -1311,23 +1307,6 @@ class KCN:
         """Replace BTC-USDT to BTC."""
         return Ok(data.replace("-USDT", ""))
 
-    def find_loses_orders(
-        self: Self,
-        symbol: str,
-        order_id: str,
-    ) -> Result[list[str], Exception]:
-        """Find other orders not quals with order_id."""
-        result: list[str] = []
-        if symbol in self.book_orders:
-            result = [
-                saved_order_id
-                for saved_order_id in self.book_orders[symbol].values()
-                if order_id != saved_order_id
-            ]
-            self.book_orders[symbol] = {"sell": "", "buy": ""}
-            return Ok(result)
-        return Ok([])
-
     def update_last_price_to_book(
         self: Self,
         ticker: str,
@@ -1353,23 +1332,17 @@ class KCN:
             for _ in self.update_last_price_to_book(symbol_name, price_decimal)
             # send data to db
             for _ in await self.insert_data_to_db(data)
-            # cancel other order of symbol
-            for loses_orders in self.find_loses_orders(
-                symbol_name,
-                data.orderId,
-            )
-            for _ in await self.massive_cancel_order(loses_orders)
-            # create new orders
-            for _ in await self.make_sell_margin_order(symbol_name)
         ):
             case Ok(symbol_name):
-                if self.book[symbol_name].borrow > Decimal("0"):
+                if data.side == "sell":
+                    # create new orders
                     match await do_async(
-                        Ok(_) for _ in await self.make_buy_margin_order(symbol_name)
+                        Ok(_)
+                        for _ in await self.make_sell_margin_order(symbol_name)
+                        for _ in await self.make_buy_margin_order(symbol_name)
                     ):
                         case Err(exc):
                             logger.exception(exc)
-
             case Err(exc):
                 logger.exception(exc)
         return Ok(None)
@@ -1386,14 +1359,10 @@ class KCN:
                 if symbol in self.book and data.data.matchSize:
                     if data.data.side == "sell":
                         self.book[symbol].borrow += Decimal(data.data.matchSize)
-                        logger.success(
-                            f"Increase borrow balance on {data.data.matchSize}"
-                        )
+                        logger.success(f"Increase borrow on {data.data.matchSize}")
                     else:
                         self.book[symbol].borrow -= Decimal(data.data.matchSize)
-                        logger.success(
-                            f"Decrease borrow balance on {data.data.matchSize}"
-                        )
+                        logger.success(f"Decrease borrow on {data.data.matchSize}")
         return Ok(None)
 
     async def event_matching(
@@ -1870,7 +1839,7 @@ class KCN:
 
     async def start_up_orders(self: Self) -> Result[None, Exception]:
         """Make init orders."""
-        # wait while matcher and balancer would be ready
+        # wait while matcher would be ready
         await asyncio.sleep(5)
 
         for ticket in self.book:
@@ -1884,18 +1853,6 @@ class KCN:
                         logger.exception(exc)
         return Ok(None)
 
-    def fill_balance_to_current_token(
-        self: Self,
-        symbol: str,
-        balance: Decimal,
-    ) -> Result[None, Exception]:
-        """Fill balance current symbol."""
-        try:
-            self.book[symbol].balance = balance
-        except IndexError as exc:
-            return Err(exc)
-        return Ok(None)
-
     def fill_borrow_to_current_token(
         self: Self,
         symbol: str,
@@ -1906,25 +1863,6 @@ class KCN:
             self.book[symbol].borrow = borrow
         except IndexError as exc:
             return Err(exc)
-        return Ok(None)
-
-    def fill_balance_all_tokens(
-        self: Self,
-        data: list[ApiV3MarginAccountsGET.Res.Data.Account],
-    ) -> Result[None, Exception]:
-        """Fill balance to all tokens in book."""
-        for ticket in data:
-            match do(
-                Ok(None)
-                for balance_decimal in self.data_to_decimal(ticket.available)
-                for _ in self.fill_balance_to_current_token(
-                    ticket.currency,
-                    balance_decimal,
-                )
-            ):
-                case Err(exc):
-                    return Err(exc)
-
         return Ok(None)
 
     def fill_borrow_all_tokens(
@@ -1946,15 +1884,6 @@ class KCN:
 
         return Ok(None)
 
-    def filter_ticket_by_book_balance(
-        self: Self,
-        data: ApiV3MarginAccountsGET.Res,
-    ) -> Result[list[ApiV3MarginAccountsGET.Res.Data.Account], Exception]:
-        """."""
-        return Ok(
-            [ticket for ticket in data.data.accounts if ticket.currency in self.book]
-        )
-
     def filter_ticket_by_book_borrow(
         self: Self,
         data: ApiV3MarginAccountsGET.Res,
@@ -1964,31 +1893,16 @@ class KCN:
             [ticket for ticket in data.data.accounts if ticket.currency in self.book]
         )
 
-    async def fill_balance(self: Self) -> Result[None, Exception]:
-        """Fill all balance by ENVs."""
-        return await do_async(
-            Ok(None)
-            for balance_accounts in await self.get_api_v3_margin_accounts(
-                params={
-                    "quoteCurrency": "USDT",
-                },
-            )
-            for ticket_to_fill in self.filter_ticket_by_book_balance(balance_accounts)
-            for _ in self.fill_balance_all_tokens(ticket_to_fill)
-        )
-
     async def fill_borrow(self: Self) -> Result[None, Exception]:
         """Fill all borrow by ENVs."""
         return await do_async(
             Ok(None)
-            for borrow_balance_accounts in await self.get_api_v3_margin_accounts(
+            for borrow_accounts in await self.get_api_v3_margin_accounts(
                 params={
                     "quoteCurrency": "USDT",
                 },
             )
-            for borrow_to_fill in self.filter_ticket_by_book_borrow(
-                borrow_balance_accounts
-            )
+            for borrow_to_fill in self.filter_ticket_by_book_borrow(borrow_accounts)
             for _ in self.fill_borrow_all_tokens(borrow_to_fill)
         )
 
@@ -2323,7 +2237,6 @@ class KCN:
 
         get all open orders
         close all open orders
-        get balance by  all tickets
         get increment by all tickets
         """
         return await do_async(
@@ -2335,7 +2248,6 @@ class KCN:
             for orders_for_cancel in self.filter_open_order_by_symbol(open_orders)
             for _ in await self.massive_cancel_order(orders_for_cancel)
             for _ in await self.sleep_to(sleep_on=5)
-            for _ in await self.fill_balance()
             for _ in await self.fill_borrow()
             for _ in await self.fill_increment()
             for _ in await self.fill_last_price()
@@ -2351,14 +2263,14 @@ class KCN:
         """Repay all assets."""
         while True:
             for ticket, data in self.book.items():
-                if data.borrow != Decimal("0") and data.balance != Decimal("0"):
+                if data.borrow > Decimal("0"):
                     # need repay
                     match await do_async(
                         Ok(None)
                         for _ in await self.post_api_v3_margin_repay(
                             data={
                                 "currency": ticket,
-                                "size": float(min(data.borrow, data.balance)),
+                                "size": float(data.borrow),
                             }
                         )
                         for _ in await self.sleep_to(sleep_on=1)
