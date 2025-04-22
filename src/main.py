@@ -2315,7 +2315,8 @@ class KCN:
         for assed in data.data.accounts:
             if assed.currency in self.book:
                 min_liability_available = min(
-                    Decimal(assed.liability), Decimal(assed.available)
+                    Decimal(assed.liability),
+                    Decimal(assed.available),
                 )
                 logger.debug(f"{min_liability_available=}")
                 if min_liability_available != Decimal("0"):
@@ -2375,7 +2376,7 @@ async def main() -> Result[None, Exception]:
         for _ in await kcn.pre_init()
         for _ in kcn.logger_success("Pre-init OK!")
         for _ in await kcn.send_telegram_msg("KuCoin settings are OK!")
-        # for _ in await kcn.infinity_task()
+        for _ in await kcn.infinity_task()
     ):
         case Ok(None):
             pass
