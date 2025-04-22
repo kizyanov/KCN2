@@ -1386,7 +1386,7 @@ class KCN:
             return Err(exc)
         return Ok(None)
 
-    async def event_filled(
+    async def order_filled(
         self: Self,
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
@@ -1413,12 +1413,39 @@ class KCN:
                 logger.exception(exc)
         return Ok(None)
 
-    async def event_matching(
+    def order_matching(
         self: Self,
-        data: OrderChangeV2.Res.Data,
+        data: OrderChangeV2.Res,
     ) -> Result[None, Exception]:
         """Event when order parted filled."""
-        logger.debug(data)
+        match do(
+            Ok(symbol) for symbol in self.replace_quote_in_symbol_name(data.data.symbol)
+        ):
+            case Ok(symbol):
+                if symbol in self.book and data.data.matchSize:
+                    if data.data.side == "sell":
+                        # decrease token
+                        self.book[symbol].balance -= Decimal(data.data.matchSize)
+                        logger.success(f"Decrease balance on {data.data.matchSize}")
+                    else:
+                        # increase tokens
+                        self.book[symbol].balance += Decimal(data.data.matchSize)
+                        logger.success(f"Increase balance on {data.data.matchSize}")
+        return Ok(None)
+
+    async def event_matching(
+        self: Self,
+        data: OrderChangeV2.Res,
+    ) -> Result[None, Exception]:
+        """."""
+        if data.data.orderType == "limit":
+            match data.data.type:
+                case "filled":  # complete fill order
+                    match await self.order_filled(data.data):
+                        case Err(exc):
+                            logger.exception(exc)
+                case "match":  # partician fill order
+                    self.order_matching(data)
         return Ok(None)
 
     async def event_candll(
@@ -1473,7 +1500,7 @@ class KCN:
                     OrderChangeV2.Res,
                     value,
                 )
-                for _ in await self.event_matching(data_dataclass.data)
+                for _ in await self.event_matching(data_dataclass)
             ):
                 case Err(exc):
                     return Err(exc)
@@ -2474,6 +2501,7 @@ class KCN:
             tasks = [
                 tg.create_task(self.repay_assets()),
                 tg.create_task(self.candle()),
+                tg.create_task(self.matching()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
             ]
