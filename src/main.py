@@ -98,7 +98,7 @@ class ApiV1MarketAllTickers:
 
         data: Data
         code: str
-        msg: str
+        msg: str | None
 
 
 @dataclass(frozen=True)
@@ -116,7 +116,7 @@ class ApiV3HfMarginOrderPOST:
             orderId: str
 
         code: str
-        msg: str
+        msg: str | None
         data: Data
 
 
@@ -140,7 +140,7 @@ class ApiV2SymbolsGET:
 
         data: list[Data]
         code: str
-        msg: str
+        msg: str | None
 
 
 @dataclass(frozen=True)
@@ -152,7 +152,7 @@ class ApiV1OrdersDELETE:
         """Parse response request."""
 
         code: str
-        msg: str
+        msg: str | None
 
 
 @dataclass(frozen=True)
@@ -178,7 +178,7 @@ class ApiV1OrdersGET:
 
         data: Data
         code: str
-        msg: str
+        msg: str | None
 
 
 @dataclass(frozen=True)
@@ -206,7 +206,7 @@ class ApiV3MarginAccountsGET:
 
         data: Data
         code: str
-        msg: str
+        msg: str | None
 
 
 @dataclass(frozen=True)
@@ -218,7 +218,7 @@ class ApiV3MarginRepayPOST:
         """Parse response request."""
 
         code: str
-        msg: str
+        msg: str | None
 
 
 @dataclass(frozen=True)
