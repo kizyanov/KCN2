@@ -2325,6 +2325,7 @@ class KCN:
                             data={
                                 "currency": assed.currency,
                                 "size": float(min_liability_available),
+                                "isHf": True,
                             }
                         )
                     ):
