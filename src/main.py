@@ -2258,24 +2258,41 @@ class KCN:
         await asyncio.sleep(sleep_on)
         return Ok(None)
 
+    async def repay(
+        self: Self,
+        data: ApiV3MarginAccountsGET.Res,
+    ) -> Result[None, Exception]:
+        """."""
+        for assed in data.data.accounts:
+            min_liability_available = min(assed.liability, assed.available)
+            if min_liability_available != Decimal("0"):
+                match await do_async(
+                    Ok(_)
+                    for _ in await self.post_api_v3_margin_repay(
+                        data={
+                            "currency": assed.currency,
+                            "size": float(min_liability_available),
+                        }
+                    )
+                ):
+                    case Err(exc):
+                        logger.exception(exc)
+        return Ok(None)
+
     async def repay_assets(self: Self) -> Result[None, Exception]:
         """Repay all assets."""
-        while True:
-            for ticket, data in self.book.items():
-                if data.borrow > Decimal("0"):
-                    # need repay
-                    match await do_async(
-                        Ok(None)
-                        for _ in await self.post_api_v3_margin_repay(
-                            data={
-                                "currency": ticket,
-                                "size": float(data.borrow),
-                            }
-                        )
-                        for _ in await self.sleep_to(sleep_on=1)
-                    ):
-                        case Err(exc):
-                            logger.exception(exc)
+        match await do_async(
+            Ok(_)
+            for margin_account in await self.get_api_v3_margin_accounts(
+                params={
+                    "quoteCurrency": "USDT",
+                },
+            )
+            for _ in await self.repay(margin_account)
+        ):
+            case Err(exc):
+                logger.exception(exc)
+        return Ok(None)
 
     async def infinity_task(self: Self) -> Result[None, Exception]:
         """Infinity run tasks."""
