@@ -1113,7 +1113,8 @@ class KCN:
                             for _ in self.logger_success(msg_subscribe_candle)
                             # subscribe to topic
                             for _ in await self.send_data_to_ws(
-                                ws_inst, msg_subscribe_candle
+                                ws_inst,
+                                msg_subscribe_candle,
                             )
                         ):
                             case Err(exc):
@@ -1395,6 +1396,8 @@ class KCN:
                 ):
                     logger.warning(f"New low price:{symbol} to {data.data.price}")
                     self.book[symbol].last_price = Decimal(data.data.price)
+                    # need create new order by new latest_price 
+                    # need delete old order
         return Ok(None)
 
     async def listen_candle_event(
