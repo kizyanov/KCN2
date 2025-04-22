@@ -1937,13 +1937,13 @@ class KCN:
 
     def fill_balance_all_tokens(
         self: Self,
-        data: list[ApiV1AccountsGET.Res.Data],
+        data: list[ApiV3MarginAccountsGET.Res.Data.Account],
     ) -> Result[None, Exception]:
         """Fill balance to all tokens in book."""
         for ticket in data:
             match do(
                 Ok(None)
-                for balance_decimal in self.data_to_decimal(ticket.balance)
+                for balance_decimal in self.data_to_decimal(ticket.available)
                 for _ in self.fill_balance_to_current_token(
                     ticket.currency,
                     balance_decimal,
@@ -1975,10 +1975,12 @@ class KCN:
 
     def filter_ticket_by_book_balance(
         self: Self,
-        data: ApiV1AccountsGET.Res,
-    ) -> Result[list[ApiV1AccountsGET.Res.Data], Exception]:
+        data: ApiV3MarginAccountsGET.Res,
+    ) -> Result[list[ApiV3MarginAccountsGET.Res.Data.Account], Exception]:
         """."""
-        return Ok([ticket for ticket in data.data if ticket.currency in self.book])
+        return Ok(
+            [ticket for ticket in data.data.accounts if ticket.currency in self.book]
+        )
 
     def filter_ticket_by_book_borrow(
         self: Self,
@@ -1993,8 +1995,10 @@ class KCN:
         """Fill all balance by ENVs."""
         return await do_async(
             Ok(None)
-            for balance_accounts in await self.get_api_v1_accounts(
-                params={"type": "margin"},
+            for balance_accounts in await self.get_api_v3_margin_accounts(
+                params={
+                    "quoteCurrency": "USDT",
+                },
             )
             for ticket_to_fill in self.filter_ticket_by_book_balance(balance_accounts)
             for _ in self.fill_balance_all_tokens(ticket_to_fill)
