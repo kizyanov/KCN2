@@ -1083,7 +1083,6 @@ class KCN:
             ):
                 case Ok(candles):
                     for msgs in batched(candles, 10, strict=False):
-                        logger.info(f"{len(msgs)} {msgs}")
                         match await do_async(
                             Ok(_)
                             for msg_subscribe_candle in self.get_msg_for_subscribe_candle(
