@@ -1424,13 +1424,15 @@ class KCN:
             case Ok(symbol):
                 if symbol in self.book and data.data.matchSize:
                     if data.data.side == "sell":
-                        # decrease token
-                        self.book[symbol].balance -= Decimal(data.data.matchSize)
-                        logger.success(f"Decrease balance on {data.data.matchSize}")
+                        self.book[symbol].borrow += Decimal(data.data.matchSize)
+                        logger.success(
+                            f"Increase borrow balance on {data.data.matchSize}"
+                        )
                     else:
-                        # increase tokens
-                        self.book[symbol].balance += Decimal(data.data.matchSize)
-                        logger.success(f"Increase balance on {data.data.matchSize}")
+                        self.book[symbol].balance -= Decimal(data.data.matchSize)
+                        logger.success(
+                            f"Decrease borrow balance on {data.data.matchSize}"
+                        )
         return Ok(None)
 
     async def event_matching(
@@ -2380,9 +2382,9 @@ class KCN:
             for _ in await self.massive_cancel_order(orders_for_cancel)
             for _ in await self.sleep_to(sleep_on=5)
             for _ in await self.fill_balance()
+            for _ in await self.fill_borrow()
             for _ in await self.fill_increment()
             for _ in await self.fill_last_price()
-            for _ in await self.fill_borrow()
             for _ in self.logger_success(self.book)
         )
 
