@@ -652,6 +652,7 @@ class KCN:
                 headers=headers,
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
+            for _ in self.logger_info(response_dict)
             for data_dataclass in self.convert_to_dataclass_from_dict(
                 ApiV3HfMarginOrdersDELETE.Res,
                 response_dict,
@@ -2362,7 +2363,7 @@ async def main() -> Result[None, Exception]:
         for _ in await kcn.pre_init()
         for _ in kcn.logger_success("Pre-init OK!")
         for _ in await kcn.send_telegram_msg("KuCoin settings are OK!")
-        for _ in await kcn.infinity_task()
+        # for _ in await kcn.infinity_task()
     ):
         case Ok(None):
             pass
