@@ -2183,16 +2183,6 @@ class KCN:
         """Quantize to up."""
         return Ok(data.quantize(increment, ROUND_UP))
 
-    def calc_size(
-        self: Self,
-        balance: Decimal,
-        need_balance: Decimal,
-    ) -> Result[Decimal, Exception]:
-        """Calc size token for limit order."""
-        if balance > need_balance:
-            return Ok(balance - need_balance)
-        return Ok(need_balance - balance)
-
     def calc_up(
         self: Self,
         ticket: str,
@@ -2501,6 +2491,7 @@ class KCN:
             tasks = [
                 tg.create_task(self.repay_assets()),
                 tg.create_task(self.candle()),
+                tg.create_task(self.reclaim_orders()),
                 tg.create_task(self.matching()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
