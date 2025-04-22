@@ -49,7 +49,6 @@ class AlertestToken:
 class Book:
     """Store data for each token."""
 
-    balance: Decimal = field(default=Decimal("0"))
     last_price: Decimal = field(default=Decimal("0"))
     baseincrement: Decimal = field(default=Decimal("0"))
     priceincrement: Decimal = field(default=Decimal("0"))
@@ -559,40 +558,6 @@ class KCN:
                 response_dict,
             )
             for result in self.check_response_code(data_dataclass)
-        )
-
-    async def get_api_v1_accounts(
-        self: Self,
-        params: dict[str, str],
-    ) -> Result[ApiV1AccountsGET.Res, Exception]:
-        """Get account list with balance.
-
-        https://www.kucoin.com/docs/rest/account/basic-info/get-account-list-spot-margin-trade_hf
-        """
-        uri = "/api/v1/accounts"
-        method = "GET"
-        return await do_async(
-            Ok(checked_dict)
-            for params_in_url in self.get_url_params_as_str(params)
-            for uri_params in self.cancatinate_str(uri, params_in_url)
-            for full_url in self.get_full_url(self.BASE_URL, uri_params)
-            for now_time in self.get_now_time()
-            for data_to_sign in self.cancatinate_str(now_time, method, uri_params)
-            for headers in self.get_headers_auth(
-                data_to_sign,
-                now_time,
-            )
-            for response_bytes in await self.request(
-                url=full_url,
-                method=method,
-                headers=headers,
-            )
-            for response_dict in self.parse_bytes_to_dict(response_bytes)
-            for data_dataclass in self.convert_to_dataclass_from_dict(
-                ApiV1AccountsGET.Res,
-                response_dict,
-            )
-            for checked_dict in self.check_response_code(data_dataclass)
         )
 
     def get_all_token_for_matching(self: Self) -> Result[list[str], Exception]:
@@ -1413,6 +1378,7 @@ class KCN:
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
         """Event when order parted filled."""
+        logger.warning(data)
         return Ok(None)
 
     async def event_candll(
@@ -1887,18 +1853,6 @@ class KCN:
 
         return Ok(None)
 
-    def fill_balance_to_current_token(
-        self: Self,
-        symbol: str,
-        balance: Decimal,
-    ) -> Result[None, Exception]:
-        """Fill balance current symbol."""
-        try:
-            self.book[symbol].balance = balance
-        except IndexError as exc:
-            return Err(exc)
-        return Ok(None)
-
     def fill_borrow_to_current_token(
         self: Self,
         symbol: str,
@@ -1909,25 +1863,6 @@ class KCN:
             self.book[symbol].borrow = borrow
         except IndexError as exc:
             return Err(exc)
-        return Ok(None)
-
-    def fill_balance_all_tokens(
-        self: Self,
-        data: list[ApiV1AccountsGET.Res.Data],
-    ) -> Result[None, Exception]:
-        """Fill balance to all tokens in book."""
-        for ticket in data:
-            match do(
-                Ok(None)
-                for balance_decimal in self.data_to_decimal(ticket.balance)
-                for _ in self.fill_balance_to_current_token(
-                    ticket.currency,
-                    balance_decimal,
-                )
-            ):
-                case Err(exc):
-                    return Err(exc)
-
         return Ok(None)
 
     def fill_borrow_all_tokens(
@@ -1951,10 +1886,12 @@ class KCN:
 
     def filter_ticket_by_book_balance(
         self: Self,
-        data: ApiV1AccountsGET.Res,
-    ) -> Result[list[ApiV1AccountsGET.Res.Data], Exception]:
+        data: ApiV3MarginAccountsGET.Res,
+    ) -> Result[list[ApiV3MarginAccountsGET.Res.Data.Account], Exception]:
         """."""
-        return Ok([ticket for ticket in data.data if ticket.currency in self.book])
+        return Ok(
+            [ticket for ticket in data.data.accounts if ticket.currency in self.book]
+        )
 
     def filter_ticket_by_book_borrow(
         self: Self,
@@ -1963,17 +1900,6 @@ class KCN:
         """."""
         return Ok(
             [ticket for ticket in data.data.accounts if ticket.currency in self.book]
-        )
-
-    async def fill_balance(self: Self) -> Result[None, Exception]:
-        """Fill all balance by ENVs."""
-        return await do_async(
-            Ok(None)
-            for balance_accounts in await self.get_api_v1_accounts(
-                params={"type": "margin"},
-            )
-            for ticket_to_fill in self.filter_ticket_by_book_balance(balance_accounts)
-            for _ in self.fill_balance_all_tokens(ticket_to_fill)
         )
 
     async def fill_borrow(self: Self) -> Result[None, Exception]:
@@ -2371,7 +2297,6 @@ class KCN:
             for orders_for_cancel in self.filter_open_order_by_symbol(open_orders)
             for _ in await self.massive_cancel_order(orders_for_cancel)
             for _ in await self.sleep_to(sleep_on=5)
-            for _ in await self.fill_balance()
             for _ in await self.fill_increment()
             for _ in await self.fill_last_price()
             for _ in await self.fill_borrow()
@@ -2424,21 +2349,6 @@ class KCN:
                                 Ok(None)
                                 for _ in await self.massive_cancel_order(loses_orders)
                                 for _ in await self.sleep_to(sleep_on=5)
-                                # update balance
-                                for balance_accounts in await self.get_api_v1_accounts(
-                                    params={"type": "margin"},
-                                )
-                                for current_symbol_balance in self.filter_balance_by_symbol(
-                                    symbol,
-                                    balance_accounts,
-                                )
-                                for balance_decimal in self.data_to_decimal(
-                                    current_symbol_balance.balance
-                                )
-                                for _ in self.fill_balance_to_current_token(
-                                    symbol,
-                                    balance_decimal,
-                                )
                                 # update last price
                                 for market_ticket in await self.get_api_v1_market_all_tickers()
                                 for current_symbol_last_price in self.filter_last_price_by_symbol(
