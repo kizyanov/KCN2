@@ -2246,11 +2246,11 @@ class KCN:
             for open_orders in await self.get_all_open_orders()
             for orders_for_cancel in self.filter_open_order_by_symbol(open_orders)
             for _ in await self.massive_cancel_order(orders_for_cancel)
+            for _ in await self.repay_assets()
             for _ in await self.sleep_to(sleep_on=5)
             for _ in await self.fill_borrow()
             for _ in await self.fill_increment()
-            for _ in await self.fill_last_price()
-            for _ in await self.repay_assets()
+            for _ in await self.fill_last_price()            
             for _ in self.logger_success(self.book)
         )
 
