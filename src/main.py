@@ -522,7 +522,7 @@ class KCN:
 
     async def post_api_v3_margin_repay(
         self: Self,
-        data: dict[str, str | int],
+        data: dict[str, float | str],
     ) -> Result[ApiV3MarginRepayPOST.Res, Exception]:
         """Repay borrowed .
 
@@ -2465,10 +2465,30 @@ class KCN:
 
             await asyncio.sleep(60)
 
+    async def repay_assets(self: Self) -> Result[None, Exception]:
+        """Repay all assets."""
+        while True:
+            for ticket, data in self.book.items():
+                if data.borrow != Decimal("0") and data.balance != Decimal("0"):
+                    # need repay
+                    match await do_async(
+                        Ok(None)
+                        for _ in await self.post_api_v3_margin_repay(
+                            data={
+                                "currency": ticket,
+                                "size": float(min(data.borrow, data.balance)),
+                            }
+                        )
+                        for _ in await self.sleep_to(sleep_on=1)
+                    ):
+                        case Err(exc):
+                            logger.exception(exc)
+
     async def infinity_task(self: Self) -> Result[None, Exception]:
         """Infinity run tasks."""
         async with asyncio.TaskGroup() as tg:
             tasks = [
+                tg.create_task(self.repay_assets()),
                 tg.create_task(self.candle()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
