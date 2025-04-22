@@ -1414,6 +1414,7 @@ class KCN:
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
         """Event when order parted filled."""
+        logger.debug(data)
         return Ok(None)
 
     async def event_candll(
