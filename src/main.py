@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 """KCN2 trading bot for kucoin."""
 
-from itertools import batched
 import asyncio
 import socket
 from base64 import b64encode
@@ -11,6 +10,7 @@ from decimal import ROUND_DOWN, ROUND_UP, Decimal, InvalidOperation
 from hashlib import sha256
 from hmac import HMAC
 from hmac import new as hmac_new
+from itertools import batched
 from os import environ
 from ssl import SSLError
 from time import time
@@ -103,7 +103,7 @@ class ApiV1MarketAllTickers:
 
 
 @dataclass(frozen=True)
-class ApiV1MarginOrderPOST:
+class ApiV3HfMarginOrderPOST:
     """."""
 
     @dataclass(frozen=True)
@@ -467,13 +467,13 @@ class KCN:
             for value_in_list in self._env_convert_to_list(value_by_key)
         )
 
-    async def post_api_v1_margin_order(
+    async def post_api_v3_hf_margin_order(
         self: Self,
         data: dict[str, str | bool],
-    ) -> Result[ApiV1MarginOrderPOST.Res, Exception]:
+    ) -> Result[ApiV3HfMarginOrderPOST.Res, Exception]:
         """Make margin order.
 
-        https://www.kucoin.com/docs/rest/margin-trading/orders/place-margin-order
+        https://www.kucoin.com/docs-new/rest/margin-trading/orders/add-order
 
         data =  {
             "clientOid": str(uuid4()).replace("-", ""),
@@ -487,7 +487,7 @@ class KCN:
             "autoRepay": True,
         }
         """
-        uri = "/api/v1/margin/order"
+        uri = "/api/v3/hf/margin/order"
         method = "POST"
         return await do_async(
             Ok(result)
@@ -514,7 +514,7 @@ class KCN:
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
             for data_dataclass in self.convert_to_dataclass_from_dict(
-                ApiV1MarginOrderPOST.Res,
+                ApiV3HfMarginOrderPOST.Res,
                 response_dict,
             )
             for result in self.check_response_code(data_dataclass)
@@ -523,7 +523,7 @@ class KCN:
     async def post_api_v3_margin_repay(
         self: Self,
         data: dict[str, str | int],
-    ) -> Result[ApiV1MarginOrderPOST.Res, Exception]:
+    ) -> Result[ApiV3MarginRepayPOST.Res, Exception]:
         """Repay borrowed .
 
         https://www.kucoin.com/docs-new/rest/margin-trading/debit/repay
@@ -555,7 +555,7 @@ class KCN:
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
             for data_dataclass in self.convert_to_dataclass_from_dict(
-                ApiV1MarginOrderPOST.Res,
+                ApiV3MarginRepayPOST.Res,
                 response_dict,
             )
             for result in self.check_response_code(data_dataclass)
@@ -1137,12 +1137,13 @@ class KCN:
                 for candles in self.get_all_token_for_matching()
             ):
                 case Ok(candles):
-                    for msgs in batched(candles, 100):
+                    for msgs in batched(candles, 10, strict=False):
                         logger.info(f"{len(msgs)} {msgs}")
                         match await do_async(
                             Ok(_)
                             for msg_subscribe_candle in self.get_msg_for_subscribe_candle(
-                                msgs, tunnelid
+                                msgs,
+                                tunnelid,
                             )
                             for _ in self.logger_success(msg_subscribe_candle)
                             # subscribe to topic
@@ -1446,10 +1447,11 @@ class KCN:
             Ok(symbol) for symbol in self.replace_quote_in_symbol_name(data.data.symbol)
         ):
             case Ok(symbol):
-                if symbol in self.book:
-                    if self.book[symbol].last_price > Decimal(data.data.price):
-                        logger.warning(f"New low price:{symbol} to {data.data.price}")
-                        self.book[symbol].last_price = Decimal(data.data.price)
+                if symbol in self.book and self.book[symbol].last_price > Decimal(
+                    data.data.price
+                ):
+                    logger.warning(f"New low price:{symbol} to {data.data.price}")
+                    self.book[symbol].last_price = Decimal(data.data.price)
         return Ok(None)
 
     async def listen_candle_event(
@@ -1634,14 +1636,14 @@ class KCN:
 
     def get_candles_for_kline(
         self: Self,
-        raw_candle: list[str],
+        raw_candle: tuple[str, ...],
     ) -> Result[str, Exception]:
         """."""
         return Ok(",".join(raw_candle))
 
     def get_msg_for_subscribe_candle(
         self: Self,
-        raw_candle: list[str],
+        raw_candle: tuple[str, ...],
         tunnelid: str,
     ) -> Result[dict[str, str | bool], Exception]:
         """Get msg for subscribe to candle kucoin."""
@@ -1817,20 +1819,22 @@ class KCN:
 
         return Ok(None)
 
-    async def wrap_post_api_v1_margin_order(
+    async def wrap_post_api_v3_hf_margin_order(
         self: Self,
         params_order_up: dict[str, str | bool],
-    ) -> Result[ApiV1MarginOrderPOST.Res, Exception]:
+    ) -> Result[ApiV3HfMarginOrderPOST.Res, Exception]:
         """."""
         match await do_async(
             Ok(order_id)
-            for order_id in await self.post_api_v1_margin_order(params_order_up)
+            for order_id in await self.post_api_v3_hf_margin_order(params_order_up)
         ):
             case Ok(order_id):
                 return Ok(order_id)
             case Err(exc):
                 return Err(exc)
-        error_msg = f"Unexpected error with post_api_v1_margin_order:{params_order_up}"
+        error_msg = (
+            f"Unexpected error with post_api_v3_hf_margin_order:{params_order_up}"
+        )
         await self.send_telegram_msg(error_msg)
         return Err(Exception(error_msg))
 
@@ -1843,7 +1847,9 @@ class KCN:
         """."""
         match await do_async(
             Ok(None)
-            for order_id in await self.wrap_post_api_v1_margin_order(params_order[side])
+            for order_id in await self.wrap_post_api_v3_hf_margin_order(
+                params_order[side]
+            )
             for _ in self.save_order_id(ticket, side, order_id.data.orderId)
         ):
             case Err(exc):
