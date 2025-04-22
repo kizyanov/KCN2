@@ -156,6 +156,25 @@ class ApiV3HfMarginOrdersDELETE:
 
 
 @dataclass(frozen=True)
+class ApiV3HfMarginOrderActiveSymbolsGET:
+    """https://www.kucoin.com/docs-new/rest/margin-trading/orders/get-symbols-with-open-order."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """Parse response request."""
+
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            symbols: list[str]
+
+        data: Data
+        code: str
+        msg: str | None
+
+
+@dataclass(frozen=True)
 class ApiV3HfMarginOrdersActiveGET:
     """https://www.kucoin.com/docs-new/rest/margin-trading/orders/get-open-orders."""
 
@@ -170,7 +189,7 @@ class ApiV3HfMarginOrdersActiveGET:
             id: str
             symbol: str
 
-        data: list[Data] | None
+        data: list[Data]
         code: str
         msg: str | None
 
@@ -568,6 +587,41 @@ class KCN:
             for _ in self.logger_info(response_dict)
             for data_dataclass in self.convert_to_dataclass_from_dict(
                 ApiV3HfMarginOrdersActiveGET.Res,
+                response_dict,
+            )
+            for result in self.check_response_code(data_dataclass)
+        )
+
+    async def get_api_v3_hf_margin_order_active_symbols(
+        self: Self,
+        params: dict[str, str],
+    ) -> Result[ApiV3HfMarginOrderActiveSymbolsGET.Res, Exception]:
+        """Get all orders by params.
+
+        https://www.kucoin.com/docs-new/rest/margin-trading/orders/get-symbols-with-open-order
+        """
+        uri = "/api/v3/hf/margin/order/active/symbols"
+        method = "GET"
+        return await do_async(
+            Ok(result)
+            for params_in_url in self.get_url_params_as_str(params)
+            for uri_params in self.cancatinate_str(uri, params_in_url)
+            for full_url in self.get_full_url(self.BASE_URL, uri_params)
+            for now_time in self.get_now_time()
+            for data_to_sign in self.cancatinate_str(now_time, method, uri_params)
+            for headers in self.get_headers_auth(
+                data_to_sign,
+                now_time,
+            )
+            for response_bytes in await self.request(
+                url=full_url,
+                method=method,
+                headers=headers,
+            )
+            for response_dict in self.parse_bytes_to_dict(response_bytes)
+            for _ in self.logger_info(response_dict)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                ApiV3HfMarginOrderActiveSymbolsGET.Res,
                 response_dict,
             )
             for result in self.check_response_code(data_dataclass)
@@ -2174,41 +2228,32 @@ class KCN:
         except ConnectionRefusedError as exc:
             return Err(exc)
 
-    def to_str(self: Self, data: float) -> Result[str, Exception]:
-        """."""
-        try:
-            return Ok(str(data))
-        except TypeError as exc:
-            return Err(exc)
-
     async def get_all_open_orders(
         self: Self,
     ) -> Result[list[ApiV3HfMarginOrdersActiveGET.Res.Data], Exception]:
         """Get all open orders."""
         open_orders: list[ApiV3HfMarginOrdersActiveGET.Res.Data] = []
-        pagesize = 500
-        currentpage = 1
-        while True:
-            match await do_async(
-                Ok(orders_for_cancel)
-                for page_size_str in self.to_str(pagesize)
-                for current_page_str in self.to_str(currentpage)
-                for orders_for_cancel in await self.get_api_v3_hf_margin_orders_active(
-                    params={
-                        "tradeType": "MARGIN_TRADE",
-                        "pageSize": page_size_str,
-                        "currentPage": current_page_str,
-                    },
-                )
-            ):
-                case Ok(res):
-                    if len(res.data) == 0:
-                        break
-
-                    currentpage += 1
-                    open_orders += res.data
-                case Err(exc):
-                    return Err(exc)
+        match await do_async(
+            Ok(symbols.data.symbols)
+            for symbols in await self.get_api_v3_hf_margin_order_active_symbols(
+                params={
+                    "tradeType": "MARGIN_TRADE",
+                }
+            )
+        ):
+            case Ok(symbols):
+                for symbol in symbols:
+                    match await do_async(
+                        Ok(order)
+                        for order in await self.get_api_v3_hf_margin_orders_active(
+                            params={
+                                "symbol": symbol,
+                                "tradeType": "MARGIN_TRADE",
+                            }
+                        )
+                    ):
+                        case Ok(order):
+                            open_orders += order.data
         return Ok(open_orders)
 
     def filter_open_order_by_symbol(
