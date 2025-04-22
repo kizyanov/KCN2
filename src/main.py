@@ -4,7 +4,7 @@
 import asyncio
 import socket
 from base64 import b64encode
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from decimal import ROUND_DOWN, ROUND_UP, Decimal, InvalidOperation
 from hashlib import sha256
@@ -49,11 +49,11 @@ class AlertestToken:
 class Book:
     """Store data for each token."""
 
-    balance: Decimal = field(default=Decimal("0"))
-    last_price: Decimal = field(default=Decimal("0"))
-    baseincrement: Decimal = field(default=Decimal("0"))
-    priceincrement: Decimal = field(default=Decimal("0"))
-    borrow: Decimal = field(default=Decimal("0"))
+    balance: Decimal
+    last_price: Decimal
+    baseincrement: Decimal
+    priceincrement: Decimal
+    borrow: Decimal
 
 
 @dataclass(frozen=True)
@@ -73,7 +73,7 @@ class TelegramSendMsg:
     class Res:
         """Parse response request."""
 
-        ok: bool = field(default=False)
+        ok: bool
 
 
 @dataclass(frozen=True)
@@ -92,14 +92,14 @@ class ApiV1MarketAllTickers:
             class Ticker:
                 """."""
 
-                symbol: str = field(default="")
-                buy: str | None = field(default=None)
+                symbol: str
+                buy: str | None
 
-            ticker: list[Ticker] = field(default_factory=list[Ticker])
+            ticker: list[Ticker]
 
-        data: Data = field(default_factory=Data)
-        code: str = field(default="")
-        msg: str = field(default="")
+        data: Data
+        code: str
+        msg: str
 
 
 @dataclass(frozen=True)
@@ -114,11 +114,11 @@ class ApiV3HfMarginOrderPOST:
         class Data:
             """."""
 
-            orderId: str = field(default="")
+            orderId: str
 
-        code: str = field(default="")
-        msg: str = field(default="")
-        data: Data = field(default_factory=Data)
+        code: str
+        msg: str
+        data: Data
 
 
 @dataclass(frozen=True)
@@ -133,15 +133,15 @@ class ApiV2SymbolsGET:
         class Data:
             """."""
 
-            baseCurrency: str = field(default="")
-            quoteCurrency: str = field(default="")
-            baseIncrement: str = field(default="")
-            priceIncrement: str = field(default="")
-            isMarginEnabled: bool = field(default=False)
+            baseCurrency: str
+            quoteCurrency: str
+            baseIncrement: str
+            priceIncrement: str
+            isMarginEnabled: bool
 
-        data: list[Data] = field(default_factory=list[Data])
-        code: str = field(default="")
-        msg: str = field(default="")
+        data: list[Data]
+        code: str
+        msg: str
 
 
 @dataclass(frozen=True)
@@ -152,8 +152,8 @@ class ApiV1OrdersDELETE:
     class Res:
         """Parse response request."""
 
-        code: str = field(default="")
-        msg: str = field(default="")
+        code: str
+        msg: str
 
 
 @dataclass(frozen=True)
@@ -172,14 +172,14 @@ class ApiV1OrdersGET:
             class Item:
                 """."""
 
-                id: str = field(default="")
-                symbol: str = field(default="")
+                id: str
+                symbol: str
 
-            items: list[Item] = field(default_factory=list[Item])
+            items: list[Item]
 
-        data: Data = field(default_factory=Data)
-        code: str = field(default="")
-        msg: str = field(default="")
+        data: Data
+        code: str
+        msg: str
 
 
 @dataclass(frozen=True)
@@ -198,16 +198,16 @@ class ApiV3MarginAccountsGET:
             class Account:
                 """."""
 
-                currency: str = field(default="")
-                liability: str = field(default="")
-                available: str = field(default="")
+                currency: str
+                liability: str
+                available: str
 
-            accounts: list[Account] = field(default_factory=list[Account])
-            debtRatio: str = field(default="")
+            accounts: list[Account]
+            debtRatio: str
 
-        data: Data = field(default_factory=Data)
-        code: str = field(default="")
-        msg: str = field(default="")
+        data: Data
+        code: str
+        msg: str
 
 
 @dataclass(frozen=True)
@@ -218,8 +218,8 @@ class ApiV3MarginRepayPOST:
     class Res:
         """Parse response request."""
 
-        code: str = field(default="")
-        msg: str = field(default="")
+        code: str
+        msg: str
 
 
 @dataclass(frozen=True)
@@ -284,32 +284,12 @@ class ApiV1BulletPrivatePOST:
                 pingInterval: int
                 pingTimeout: int
 
-            instanceServers: list[Instance] = field(default_factory=list[Instance])
-            token: str = field(default="")
+            instanceServers: list[Instance]
+            token: str
 
-        data: Data = field(default_factory=Data)
-        code: str = field(default="")
-        msg: str = field(default="")
-
-
-@dataclass(frozen=True)
-class ApiV1AccountsGET:
-    """."""
-
-    @dataclass(frozen=True)
-    class Res:
-        """Parse response request."""
-
-        @dataclass(frozen=True)
-        class Data:
-            """."""
-
-            currency: str = field(default="")
-            balance: str = field(default="")
-
-        data: list[Data] = field(default_factory=list[Data])
-        code: str = field(default="")
-        msg: str = field(default="")
+        data: Data
+        code: str
+        msg: str
 
 
 class KCN:
@@ -427,7 +407,7 @@ class KCN:
                 )
                 for result in self.check_telegram_response(data_dataclass)
             )
-        return Ok(TelegramSendMsg.Res())
+        return Ok(TelegramSendMsg.Res(ok=False))
 
     async def send_telegram_msg(self: Self, data: str) -> Result[None, Exception]:
         """Send msg to telegram."""
@@ -559,40 +539,6 @@ class KCN:
                 response_dict,
             )
             for result in self.check_response_code(data_dataclass)
-        )
-
-    async def get_api_v1_accounts(
-        self: Self,
-        params: dict[str, str],
-    ) -> Result[ApiV1AccountsGET.Res, Exception]:
-        """Get account list with balance.
-
-        https://www.kucoin.com/docs/rest/account/basic-info/get-account-list-spot-margin-trade_hf
-        """
-        uri = "/api/v1/accounts"
-        method = "GET"
-        return await do_async(
-            Ok(checked_dict)
-            for params_in_url in self.get_url_params_as_str(params)
-            for uri_params in self.cancatinate_str(uri, params_in_url)
-            for full_url in self.get_full_url(self.BASE_URL, uri_params)
-            for now_time in self.get_now_time()
-            for data_to_sign in self.cancatinate_str(now_time, method, uri_params)
-            for headers in self.get_headers_auth(
-                data_to_sign,
-                now_time,
-            )
-            for response_bytes in await self.request(
-                url=full_url,
-                method=method,
-                headers=headers,
-            )
-            for response_dict in self.parse_bytes_to_dict(response_bytes)
-            for data_dataclass in self.convert_to_dataclass_from_dict(
-                ApiV1AccountsGET.Res,
-                response_dict,
-            )
-            for checked_dict in self.check_response_code(data_dataclass)
         )
 
     def get_all_token_for_matching(self: Self) -> Result[list[str], Exception]:
@@ -1330,7 +1276,15 @@ class KCN:
         }
         """
         self.book: dict[str, Book] = {
-            ticket: Book() for ticket in self.ALL_CURRENCY if isinstance(ticket, str)
+            ticket: Book(
+                balance=Decimal("0"),
+                last_price=Decimal("0"),
+                baseincrement=Decimal("0"),
+                borrow=Decimal("0"),
+                priceincrement=Decimal("0"),
+            )
+            for ticket in self.ALL_CURRENCY
+            if isinstance(ticket, str)
         }
         self.book_orders: dict[str, dict[str, str]] = {
             ticket: {
@@ -2354,23 +2308,6 @@ class KCN:
             ]
         )
 
-    def filter_open_order_by_symbol_for_compare(
-        self: Self,
-        data: list[ApiV1OrdersGET.Res.Data.Item],
-    ) -> Result[dict[str, list[str]], Exception]:
-        """Filted open order by exist in book."""
-        result: dict[str, list[str]] = {}
-
-        for order in data:
-            symbol = order.symbol.replace("-USDT", "")
-            if symbol in self.book:
-                if symbol in result:
-                    result[symbol].append(order.id)
-                else:
-                    result[symbol] = [order.id]
-
-        return Ok(result)
-
     async def pre_init(self: Self) -> Result[Self, Exception]:
         """Pre-init.
 
@@ -2400,85 +2337,6 @@ class KCN:
         await asyncio.sleep(sleep_on)
         return Ok(None)
 
-    def filter_balance_by_symbol(
-        self: Self,
-        symbol: str,
-        data: ApiV1AccountsGET.Res,
-    ) -> Result[ApiV1AccountsGET.Res.Data, Exception]:
-        """."""
-        for ticket in data.data:
-            if symbol == ticket.currency:
-                return Ok(ticket)
-        return Err(Exception(f"Can't find {symbol=} in {data.data}"))
-
-    def filter_last_price_by_symbol(
-        self: Self,
-        symbol: str,
-        data: ApiV1MarketAllTickers.Res,
-    ) -> Result[ApiV1MarketAllTickers.Res.Data.Ticker, Exception]:
-        """."""
-        for ticket in data.data.ticker:
-            if symbol == ticket.symbol.replace("-USDT", ""):
-                return Ok(ticket)
-        return Err(Exception(f"Can't find {symbol=} in {data.data.ticker}"))
-
-    async def reclaim_orders(self: Self) -> Result[None, Exception]:
-        """UpKeep always 2 order (sell and buy)."""
-        perfect_count_orders = 2
-        await asyncio.sleep(60)
-        while True:
-            match await do_async(
-                Ok(orders_for_compare)
-                for open_orders in await self.get_all_open_orders()
-                for orders_for_compare in self.filter_open_order_by_symbol_for_compare(
-                    open_orders
-                )
-            ):
-                case Ok(orders_for_compare):
-                    for symbol, loses_orders in orders_for_compare.items():
-                        if len(loses_orders) != perfect_count_orders:
-                            await do_async(
-                                Ok(None)
-                                for _ in await self.massive_cancel_order(loses_orders)
-                                for _ in await self.sleep_to(sleep_on=5)
-                                # update balance
-                                for balance_accounts in await self.get_api_v1_accounts(
-                                    params={"type": "margin"},
-                                )
-                                for current_symbol_balance in self.filter_balance_by_symbol(
-                                    symbol,
-                                    balance_accounts,
-                                )
-                                for balance_decimal in self.data_to_decimal(
-                                    current_symbol_balance.balance
-                                )
-                                for _ in self.fill_balance_to_current_token(
-                                    symbol,
-                                    balance_decimal,
-                                )
-                                # update last price
-                                for market_ticket in await self.get_api_v1_market_all_tickers()
-                                for current_symbol_last_price in self.filter_last_price_by_symbol(
-                                    symbol,
-                                    market_ticket,
-                                )
-                                for last_price_decimal in self.data_to_decimal(
-                                    current_symbol_last_price.buy or ""
-                                )
-                                for replased_symbol in self.replace_quote_in_symbol_name(
-                                    current_symbol_last_price.symbol
-                                )
-                                for _ in self.fill_one_ticket_last_price(
-                                    replased_symbol,
-                                    last_price_decimal,
-                                )
-                                for _ in await self.fill_last_price()
-                                for _ in await self.make_sell_margin_order(symbol)
-                                for _ in await self.make_buy_margin_order(symbol)
-                            )
-
-            await asyncio.sleep(60)
-
     async def repay_assets(self: Self) -> Result[None, Exception]:
         """Repay all assets."""
         while True:
@@ -2504,7 +2362,6 @@ class KCN:
             tasks = [
                 tg.create_task(self.repay_assets()),
                 tg.create_task(self.candle()),
-                tg.create_task(self.reclaim_orders()),
                 tg.create_task(self.matching()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
