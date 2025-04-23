@@ -459,6 +459,8 @@ class KCN:
     ) -> Result[ApiV3HfMarginOrderPOST.Res, Exception]:
         """Make margin order.
 
+        weight 5
+
         https://www.kucoin.com/docs-new/rest/margin-trading/orders/add-order
 
         data =  {
@@ -510,7 +512,9 @@ class KCN:
         self: Self,
         data: dict[str, float | str],
     ) -> Result[ApiV3MarginRepayPOST.Res, Exception]:
-        """Repay borrowed .
+        """Repay borrowed.
+
+        weight 10
 
         https://www.kucoin.com/docs-new/rest/margin-trading/debit/repay
 
@@ -630,6 +634,8 @@ class KCN:
     ) -> Result[ApiV3HfMarginOrdersDELETE.Res, Exception]:
         """Cancel order by `id`.
 
+        weight 5
+
         https://www.kucoin.com/docs-new/rest/margin-trading/orders/cancel-order-by-orderld
         """
         uri = f"/api/v3/hf/margin/orders/{order_id}"
@@ -663,6 +669,7 @@ class KCN:
         self: Self,
     ) -> Result[ApiV2SymbolsGET.Res, Exception]:
         """Get symbol list.
+        weight 4
 
         https://www.kucoin.com/docs-new/rest/spot-trading/market-data/get-all-symbols
         """
@@ -690,6 +697,8 @@ class KCN:
         params: dict[str, str],
     ) -> Result[ApiV3MarginAccountsGET.Res, Exception]:
         """Get margin account user data.
+
+        weight 15
 
         https://www.kucoin.com/docs-new/rest/account-info/account-funding/get-account-cross-margin
         """
@@ -724,6 +733,8 @@ class KCN:
     ) -> Result[ApiV1BulletPrivatePOST.Res, Exception]:
         """Get tokens for private channel.
 
+        weight 10
+
         https://www.kucoin.com/docs-new/websocket-api/base-info/get-private-token-spot-margin
         """
         uri = "/api/v1/bullet-private"
@@ -755,6 +766,8 @@ class KCN:
     ) -> Result[ApiV1BulletPrivatePOST.Res, Exception]:
         """Get tokens for private channel.
 
+        weight 10
+
         https://www.kucoin.com/docs-new/websocket-api/base-info/get-public-token-spot-margin
         """
         uri = "/api/v1/bullet-public"
@@ -780,6 +793,8 @@ class KCN:
         self: Self,
     ) -> Result[ApiV1MarketAllTickers.Res, Exception]:
         """Get all tickers with last price.
+
+        weight 15
 
         https://www.kucoin.com/docs-new/rest/spot-trading/market-data/get-all-tickers
         """
@@ -2251,7 +2266,6 @@ class KCN:
             for open_orders in await self.get_all_open_orders()
             for orders_for_cancel in self.filter_open_order_by_symbol(open_orders)
             for _ in await self.massive_cancel_order(orders_for_cancel)
-            for _ in await self.repay_assets()
             for _ in await self.sleep_to(sleep_on=5)
             for _ in await self.fill_borrow()
             for _ in await self.fill_increment()
@@ -2270,22 +2284,22 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         for assed in data.data.accounts:
-            logger.warning(assed)
             if assed.currency in self.book:
-                min_liability_available = min(
-                    Decimal(assed.liability),
-                    Decimal(assed.available),
-                )
-                logger.debug(f"{min_liability_available=}")
-                if min_liability_available != Decimal("0"):
+                liability = Decimal(assed.liability)
+                available = Decimal(assed.available)
+                if liability > available and available != 0:
                     match await do_async(
                         Ok(_)
                         for _ in await self.post_api_v3_margin_repay(
                             data={
                                 "currency": assed.currency,
-                                "size": float(min_liability_available),
+                                "size": float(available),
+                                "isIsolated": False,
                                 "isHf": True,
                             }
+                        )
+                        for _ in self.logger_success(
+                            f"Repay:{assed.currency} on {available}"
                         )
                     ):
                         case Err(exc):
@@ -2294,17 +2308,19 @@ class KCN:
 
     async def repay_assets(self: Self) -> Result[None, Exception]:
         """Repay all assets."""
-        match await do_async(
-            Ok(_)
-            for margin_account in await self.get_api_v3_margin_accounts(
-                params={
-                    "quoteCurrency": "USDT",
-                },
-            )
-            for _ in await self.repay(margin_account)
-        ):
-            case Err(exc):
-                logger.exception(exc)
+        while True:
+            match await do_async(
+                Ok(_)
+                for _ in await self.sleep_to(sleep_on=30)
+                for margin_account in await self.get_api_v3_margin_accounts(
+                    params={
+                        "quoteCurrency": "USDT",
+                    },
+                )
+                for _ in await self.repay(margin_account)
+            ):
+                case Err(exc):
+                    logger.exception(exc)
         return Ok(None)
 
     async def auto_close_sell_orders(self: Self) -> Result[None, Exception]:
@@ -2353,6 +2369,7 @@ class KCN:
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
                 tg.create_task(self.auto_close_sell_orders()),
+                tg.create_task(self.repay_assets()),
             ]
 
         for task in tasks:
