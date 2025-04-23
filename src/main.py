@@ -669,6 +669,7 @@ class KCN:
         self: Self,
     ) -> Result[ApiV2SymbolsGET.Res, Exception]:
         """Get symbol list.
+
         weight 4
 
         https://www.kucoin.com/docs-new/rest/spot-trading/market-data/get-all-symbols
