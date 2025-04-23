@@ -2341,31 +2341,36 @@ class KCN:
             if assed.currency in self.book:
                 logger.warning(assed)
                 if Decimal(assed.liability) != 0:
-                    match await do_async(
-                        Ok(_)
-                        for last_price_quantize in self.quantize_minus(
-                            self.book[assed.currency].last_price,
-                            self.book[assed.currency].baseincrement,
-                        )
-                        for raw_size in self.divide(self.BASE_KEEP, last_price_quantize)
-                        for size in self.quantize_plus(
-                            raw_size,
-                            self.book[assed.currency].baseincrement,
-                        )
-                        for _ in await self.post_api_v3_margin_repay(
-                            data={
-                                "currency": assed.currency,
-                                "size": float(size),
-                                "isIsolated": False,
-                                "isHf": True,
-                            }
-                        )
-                        for _ in self.logger_success(
-                            f"Repay:{assed.currency} on {size}"
-                        )
-                    ):
-                        case Err(exc):
-                            logger.exception(exc)
+                    while True:
+                        match await do_async(
+                            Ok(_)
+                            for last_price_quantize in self.quantize_minus(
+                                self.book[assed.currency].last_price,
+                                self.book[assed.currency].baseincrement,
+                            )
+                            for raw_size in self.divide(
+                                self.BASE_KEEP, last_price_quantize
+                            )
+                            for size in self.quantize_plus(
+                                raw_size,
+                                self.book[assed.currency].baseincrement,
+                            )
+                            for _ in await self.post_api_v3_margin_repay(
+                                data={
+                                    "currency": assed.currency,
+                                    "size": float(size),
+                                    "isIsolated": False,
+                                    "isHf": True,
+                                }
+                            )
+                            for _ in self.logger_success(
+                                f"Repay:{assed.currency} on {size}"
+                            )
+                            for _ in await self.sleep_to(sleep_on=1)
+                        ):
+                            case Err(exc):
+                                logger.exception(exc)
+                                break
         return Ok(None)
 
     async def repay_assets(self: Self) -> Result[None, Exception]:
