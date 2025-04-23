@@ -2374,7 +2374,6 @@ class KCN:
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
                 tg.create_task(self.auto_close_sell_orders()),
-                tg.create_task(self.repay_assets()),
             ]
 
         for task in tasks:
