@@ -2347,7 +2347,7 @@ class KCN:
                             self.book[assed.currency].last_price,
                             self.book[assed.currency].baseincrement,
                         )
-                        for raw_size in self.divide(Decimal("1"), last_price_quantize)
+                        for raw_size in self.divide(self.BASE_KEEP, last_price_quantize)
                         for size in self.quantize_plus(
                             raw_size,
                             self.book[assed.currency].baseincrement,
