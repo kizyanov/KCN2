@@ -627,6 +627,41 @@ class KCN:
             for result in self.check_response_code(data_dataclass)
         )
 
+    async def delete_api_v3_hf_margin_orders_all(
+        self: Self,
+        params: dict[str, str],
+    ) -> Result[ApiV3HfMarginOrderActiveSymbolsGET.Res, Exception]:
+        """Get all orders by params.
+
+        https://www.kucoin.com/docs-new/rest/margin-trading/orders/cancel-all-orders-by-symbol
+        """
+        uri = "/api/v3/hf/margin/orders"
+        method = "DELETE"
+        return await do_async(
+            Ok(result)
+            for params_in_url in self.get_url_params_as_str(params)
+            for uri_params in self.cancatinate_str(uri, params_in_url)
+            for full_url in self.get_full_url(self.BASE_URL, uri_params)
+            for now_time in self.get_now_time()
+            for data_to_sign in self.cancatinate_str(now_time, method, uri_params)
+            for headers in self.get_headers_auth(
+                data_to_sign,
+                now_time,
+            )
+            for response_bytes in await self.request(
+                url=full_url,
+                method=method,
+                headers=headers,
+            )
+            for response_dict in self.parse_bytes_to_dict(response_bytes)
+            for _ in self.logger_info(response_dict)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                ApiV3HfMarginOrderActiveSymbolsGET.Res,
+                response_dict,
+            )
+            for result in self.check_response_code(data_dataclass)
+        )
+
     async def delete_api_v3_hf_margin_orders(
         self: Self,
         order_id: str,
@@ -2252,6 +2287,21 @@ class KCN:
             ]
         )
 
+    async def tt(self: Self) -> Result[None, Exception]:
+        """."""
+        for ticket in self.book:
+            match await do_async(
+                Ok(d)
+                for d in await self.delete_api_v3_hf_margin_orders_all(
+                    params={"symbol": ticket, "tradeType": "MARGIN_TRADE"}
+                )
+            ):
+                case Err(exc):
+                    logger.exception(exc)
+                case Ok(d):
+                    logger.success(d)
+        return Ok(None)
+
     async def pre_init(self: Self) -> Result[Self, Exception]:
         """Pre-init.
 
@@ -2271,6 +2321,7 @@ class KCN:
             for _ in await self.fill_borrow()
             for _ in await self.fill_increment()
             for _ in await self.fill_last_price()
+            for _ in await self.tt()
             for _ in self.logger_success(self.book)
         )
 
