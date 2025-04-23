@@ -207,6 +207,9 @@ class ApiV3MarginAccountsGET:
                 """."""
 
                 currency: str
+                total: str
+                available: str
+                hold: str
                 liability: str
                 available: str
 
