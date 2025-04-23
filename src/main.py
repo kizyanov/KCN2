@@ -182,6 +182,7 @@ class ApiV3HfMarginOrdersActiveGET:
             id: str
             symbol: str
             side: str
+            size: str
             price: str
 
         data: list[Data]
@@ -2343,7 +2344,9 @@ class KCN:
                 ):
                     case Ok(active_orders):
                         for orde in active_orders.data:
-                            logger.info(f"{orde.symbol}:{orde.side}:{orde.price}")
+                            logger.info(
+                                f"{orde.symbol}:{orde.side}:{orde.size}:{orde.price}"
+                            )
                         for order in sorted(
                             [
                                 order
@@ -2373,6 +2376,7 @@ class KCN:
                 tg.create_task(self.candle()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
+                tg.create_task(self.repay_assets()),
                 tg.create_task(self.auto_close_sell_orders()),
             ]
 
