@@ -208,7 +208,6 @@ class ApiV3MarginAccountsGET:
 
                 currency: str
                 total: str
-                available: str
                 hold: str
                 liability: str
                 available: str
@@ -2341,13 +2340,16 @@ class KCN:
         for assed in data.data.accounts:
             if assed.currency in self.book:
                 logger.warning(assed)
-                liability = Decimal(assed.liability)
-                available = Decimal(assed.available)
-                if liability > available and available != 0:
+                if Decimal(assed.liability) != 0:
                     match await do_async(
                         Ok(_)
-                        for size in self.quantize_minus(
-                            available,
+                        for last_price_quantize in self.quantize_minus(
+                            self.book[assed.currency].last_price,
+                            self.book[assed.currency].baseincrement,
+                        )
+                        for raw_size in self.divide(Decimal("1"), last_price_quantize)
+                        for size in self.quantize_plus(
+                            raw_size,
                             self.book[assed.currency].baseincrement,
                         )
                         for _ in await self.post_api_v3_margin_repay(
@@ -2359,7 +2361,7 @@ class KCN:
                             }
                         )
                         for _ in self.logger_success(
-                            f"Repay:{assed.currency} on {available}"
+                            f"Repay:{assed.currency} on {size}"
                         )
                     ):
                         case Err(exc):
