@@ -109,15 +109,8 @@ class ApiV3HfMarginOrderPOST:
     class Res:
         """Parse response request."""
 
-        @dataclass(frozen=True)
-        class Data:
-            """."""
-
-            orderId: str
-
         code: str
         msg: str | None
-        data: Data
 
 
 @dataclass(frozen=True)
@@ -188,6 +181,8 @@ class ApiV3HfMarginOrdersActiveGET:
 
             id: str
             symbol: str
+            side: str
+            price: str
 
         data: list[Data]
         code: str
@@ -562,6 +557,8 @@ class KCN:
         params: dict[str, str],
     ) -> Result[ApiV3HfMarginOrdersActiveGET.Res, Exception]:
         """Get all orders by params.
+
+        4 weight
 
         https://www.kucoin.com/docs-new/rest/margin-trading/orders/get-open-orders
         """
@@ -1313,16 +1310,6 @@ class KCN:
                 "borrow": Decimal,
             }
         }
-        book_orders = {
-            "ADA": {
-                "sell": [""],
-                "buy": [""]
-            },
-            "JUP": {
-                "sell": [""],
-                "buy": [""]
-            }
-        }
         """
         self.book: dict[str, Book] = {
             ticket: Book(
@@ -1334,14 +1321,7 @@ class KCN:
             for ticket in self.ALL_CURRENCY
             if isinstance(ticket, str)
         }
-        self.book_orders: dict[str, dict[str, list[str]]] = {
-            ticket: {
-                "sell": [],
-                "buy": [],
-            }
-            for ticket in self.ALL_CURRENCY
-            if isinstance(ticket, str)
-        }
+
         return Ok(None)
 
     def decimal_to_str(self: Self, data: Decimal) -> Result[str, Exception]:
@@ -1390,8 +1370,8 @@ class KCN:
                     # create new orders
                     match await do_async(
                         Ok(_)
-                        for _ in await self.make_sell_margin_order(symbol_name)
                         for _ in await self.make_buy_margin_order(symbol_name)
+                        for _ in await self.make_sell_margin_order(symbol_name)
                     ):
                         case Err(exc):
                             logger.exception(exc)
@@ -1800,26 +1780,6 @@ class KCN:
             for client_id in self.format_to_str_uuid(default_uuid4)
         )
 
-    def save_sell_order_id(
-        self: Self,
-        symbol: str,
-        order_id: str,
-    ) -> Result[None, Exception]:
-        """Save sell order id."""
-        if symbol in self.book:
-            self.book_orders[symbol]["sell"].append(order_id)
-        return Ok(None)
-
-    def save_buy_order_id(
-        self: Self,
-        symbol: str,
-        order_id: str,
-    ) -> Result[None, Exception]:
-        """Save buy order id."""
-        if symbol in self.book:
-            self.book_orders[symbol]["buy"].append(order_id)
-        return Ok(None)
-
     async def wrap_post_api_v3_hf_margin_order(
         self: Self,
         params_order_up: dict[str, str | bool],
@@ -1853,10 +1813,7 @@ class KCN:
                 price=order_down.price,
                 size=order_down.size,
             )
-            for order_id in await self.wrap_post_api_v3_hf_margin_order(
-                params_order_down
-            )
-            for _ in self.save_buy_order_id(ticket, order_id.data.orderId)
+            for _ in await self.wrap_post_api_v3_hf_margin_order(params_order_down)
         ):
             case Err(exc):
                 await self.send_telegram_msg(f"{exc}")
@@ -1877,8 +1834,7 @@ class KCN:
                 price=order_up.price,
                 size=order_up.size,
             )
-            for order_id in await self.wrap_post_api_v3_hf_margin_order(params_order_up)
-            for _ in self.save_sell_order_id(ticket, order_id.data.orderId)
+            for _ in await self.wrap_post_api_v3_hf_margin_order(params_order_up)
         ):
             case Err(exc):
                 await self.send_telegram_msg(f"{exc}")
@@ -2345,20 +2301,29 @@ class KCN:
         """."""
         while True:
             for symbol in self.book:
-                for order_id in self.book_orders[symbol]["sell"][:-1]:
-                    match await do_async(
-                        Ok(_)
-                        for _ in await self.delete_api_v3_hf_margin_orders(
-                            order_id,
-                            params={
-                                "symbol": f"{symbol}-USDT",
-                            },
-                        )
-                    ):
-                        case Ok(_):
-                            self.book_orders[symbol]["sell"].remove(order_id)
-                        case Err(exc):
-                            logger.exception(exc)
+                match await do_async(
+                    Ok(active_orders)
+                    for active_orders in await self.get_api_v3_hf_margin_orders_active(
+                        params={
+                            "symbol": f"{symbol}-USDT",
+                            "tradeType": "MARGIN_TRADE",
+                        }
+                    )
+                ):
+                    case Ok(active_orders):
+                        # sell and buy
+                        for _ in filter(
+                            lambda order: Decimal(order.price),
+                            [
+                                order
+                                for order in active_orders.data
+                                if order.side == "sell"
+                            ],
+                        ):
+                            pass
+
+                    case Err(exc):
+                        logger.exception(exc)
 
     async def infinity_task(self: Self) -> Result[None, Exception]:
         """Infinity run tasks."""
