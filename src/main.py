@@ -2366,7 +2366,6 @@ class KCN:
                             for _ in self.logger_success(
                                 f"Repay:{assed.currency} on {size}"
                             )
-                            for _ in await self.sleep_to(sleep_on=1)
                         ):
                             case Err(exc):
                                 logger.exception(exc)
