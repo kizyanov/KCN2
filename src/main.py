@@ -1374,6 +1374,17 @@ class KCN:
                     ):
                         case Err(exc):
                             logger.exception(exc)
+                elif (
+                    data.side == "buy"
+                    and symbol_name in self.book
+                    and self.book[symbol_name].borrow > 0
+                ):
+                    # create new orders for return borrow
+                    match await do_async(
+                        Ok(_) for _ in await self.make_buy_margin_order(symbol_name)
+                    ):
+                        case Err(exc):
+                            logger.exception(exc)
             case Err(exc):
                 logger.exception(exc)
         return Ok(None)
