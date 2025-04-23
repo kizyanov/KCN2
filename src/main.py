@@ -2286,6 +2286,7 @@ class KCN:
         """."""
         for assed in data.data.accounts:
             if assed.currency in self.book:
+                logger.warning(assed)
                 liability = Decimal(assed.liability)
                 available = Decimal(assed.available)
                 if liability > available and available != 0:
