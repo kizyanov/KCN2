@@ -584,7 +584,6 @@ class KCN:
                 headers=headers,
             )
             for response_dict in self.parse_bytes_to_dict(response_bytes)
-            for _ in self.logger_info(response_dict)
             for data_dataclass in self.convert_to_dataclass_from_dict(
                 ApiV3HfMarginOrdersActiveGET.Res,
                 response_dict,
@@ -2343,7 +2342,8 @@ class KCN:
                     )
                 ):
                     case Ok(active_orders):
-                        # sell and buy
+                        for orde in active_orders.data:
+                            logger.info(f"{orde.symbol}:{orde.side}:{orde.price}")
                         for order in sorted(
                             [
                                 order
