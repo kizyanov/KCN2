@@ -2291,10 +2291,14 @@ class KCN:
                 if liability > available and available != 0:
                     match await do_async(
                         Ok(_)
+                        for size in self.quantize_minus(
+                            available,
+                            self.book[assed.currency].baseincrement,
+                        )
                         for _ in await self.post_api_v3_margin_repay(
                             data={
                                 "currency": assed.currency,
-                                "size": float(available),
+                                "size": float(size),
                                 "isIsolated": False,
                                 "isHf": True,
                             }
