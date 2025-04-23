@@ -2293,7 +2293,7 @@ class KCN:
             match await do_async(
                 Ok(d)
                 for d in await self.delete_api_v3_hf_margin_orders_all(
-                    params={"symbol": ticket, "tradeType": "MARGIN_TRADE"}
+                    params={"symbol": f"{ticket}-USDT", "tradeType": "MARGIN_TRADE"}
                 )
             ):
                 case Err(exc):
