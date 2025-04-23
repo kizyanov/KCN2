@@ -243,7 +243,6 @@ class OrderChangeV2:
 
             symbol: str
             side: str
-            orderId: str
             orderType: str
             type: str
             price: str | None  # fix for market order type
@@ -2312,15 +2311,23 @@ class KCN:
                 ):
                     case Ok(active_orders):
                         # sell and buy
-                        for _ in filter(
-                            lambda order: Decimal(order.price),
+                        for order in sorted(
                             [
                                 order
                                 for order in active_orders.data
                                 if order.side == "sell"
                             ],
-                        ):
-                            pass
+                            key=lambda x: Decimal(x.price),
+                        )[1:]:
+                            match await do_async(
+                                Ok(_)
+                                for _ in await self.delete_api_v3_hf_margin_orders(
+                                    order.id,
+                                    params={"symbol": order.symbol},
+                                )
+                            ):
+                                case Err(exc):
+                                    logger.exception(exc)
 
                     case Err(exc):
                         logger.exception(exc)
