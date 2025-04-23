@@ -1315,12 +1315,12 @@ class KCN:
         }
         book_orders = {
             "ADA": {
-                "sell": "",
-                "buy": ""
+                "sell": [""],
+                "buy": [""]
             },
             "JUP": {
-                "sell": "",
-                "buy": ""
+                "sell": [""],
+                "buy": [""]
             }
         }
         """
@@ -1334,10 +1334,10 @@ class KCN:
             for ticket in self.ALL_CURRENCY
             if isinstance(ticket, str)
         }
-        self.book_orders: dict[str, dict[str, str]] = {
+        self.book_orders: dict[str, dict[str, list[str]]] = {
             ticket: {
-                "sell": "",
-                "buy": "",
+                "sell": [],
+                "buy": [],
             }
             for ticket in self.ALL_CURRENCY
             if isinstance(ticket, str)
@@ -1444,16 +1444,7 @@ class KCN:
                 if symbol in self.book and self.book[symbol].last_price > Decimal(
                     data.data.price
                 ):
-                    logger.warning(f"New low price:{symbol} to {data.data.price}")
                     self.book[symbol].last_price = Decimal(data.data.price)
-                    await self.massive_cancel_order(
-                        data=[
-                            {
-                                "id": self.book_orders[symbol]["sell"],
-                                "symbol": data.data.symbol,
-                            },
-                        ]
-                    )
                     await self.make_sell_margin_order(symbol)
         return Ok(None)
 
@@ -1816,7 +1807,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Save sell order id."""
         if symbol in self.book:
-            self.book_orders[symbol]["sell"] = order_id
+            self.book_orders[symbol]["sell"].append(order_id)
         return Ok(None)
 
     def save_buy_order_id(
@@ -1826,7 +1817,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Save buy order id."""
         if symbol in self.book:
-            self.book_orders[symbol]["buy"] = order_id
+            self.book_orders[symbol]["buy"].append(order_id)
         return Ok(None)
 
     async def wrap_post_api_v3_hf_margin_order(
@@ -2350,6 +2341,25 @@ class KCN:
                 logger.exception(exc)
         return Ok(None)
 
+    async def auto_close_sell_orders(self: Self) -> Result[None, Exception]:
+        """."""
+        while True:
+            for symbol in self.book:
+                for order_id in self.book_orders[symbol]["sell"][:-1]:
+                    match await do_async(
+                        Ok(_)
+                        for _ in await self.delete_api_v3_hf_margin_orders(
+                            order_id,
+                            params={
+                                "symbol": f"{symbol}-USDT",
+                            },
+                        )
+                    ):
+                        case Ok(_):
+                            self.book_orders[symbol]["sell"].remove(order_id)
+                        case Err(exc):
+                            logger.exception(exc)
+
     async def infinity_task(self: Self) -> Result[None, Exception]:
         """Infinity run tasks."""
         async with asyncio.TaskGroup() as tg:
@@ -2358,6 +2368,7 @@ class KCN:
                 tg.create_task(self.candle()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
+                tg.create_task(self.auto_close_sell_orders()),
             ]
 
         for task in tasks:
