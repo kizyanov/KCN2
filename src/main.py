@@ -2338,7 +2338,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         for assed in data.data.accounts:
-            if assed.currency in self.book or assed.currency == 'USDT':
+            if assed.currency in self.book:
                 logger.warning(assed)
                 if Decimal(assed.liability) != 0:
                     while True:
@@ -2370,6 +2370,28 @@ class KCN:
                             case Err(exc):
                                 logger.exception(exc)
                                 break
+            elif assed.currency == "USDT":
+                logger.warning(assed)
+                if Decimal(assed.liability) != 0:
+                    while True:
+                        match await do_async(
+                            Ok(_)
+                            for _ in await self.post_api_v3_margin_repay(
+                                data={
+                                    "currency": assed.currency,
+                                    "size": 10.0,
+                                    "isIsolated": False,
+                                    "isHf": True,
+                                }
+                            )
+                            for _ in self.logger_success(
+                                f"Repay:{assed.currency} on {10}"
+                            )
+                        ):
+                            case Err(exc):
+                                logger.exception(exc)
+                                break
+
         return Ok(None)
 
     async def repay_assets(self: Self) -> Result[None, Exception]:
