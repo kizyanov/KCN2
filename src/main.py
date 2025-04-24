@@ -1184,7 +1184,7 @@ class KCN:
                 for candles in self.get_all_token_for_matching()
             ):
                 case Ok(candles):
-                    for msgs in batched(candles, 10, strict=False):
+                    for msgs in batched(candles, 100, strict=False):
                         match await do_async(
                             Ok(_)
                             for msg_subscribe_candle in self.get_msg_for_subscribe_candle(
@@ -2399,7 +2399,7 @@ class KCN:
         while True:
             match await do_async(
                 Ok(_)
-                for _ in await self.sleep_to(sleep_on=30)
+                for _ in await self.sleep_to(sleep_on=1)
                 for margin_account in await self.get_api_v3_margin_accounts(
                     params={
                         "quoteCurrency": "USDT",
@@ -2414,10 +2414,10 @@ class KCN:
     async def auto_close_sell_orders(self: Self) -> Result[None, Exception]:
         """."""
         while True:
+            await self.sleep_to(sleep_on=1)
             for symbol in self.book:
                 match await do_async(
                     Ok(active_orders)
-                    for _ in await self.sleep_to(sleep_on=1)
                     for active_orders in await self.get_api_v3_hf_margin_orders_active(
                         params={
                             "symbol": f"{symbol}-USDT",
