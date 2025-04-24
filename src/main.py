@@ -2349,7 +2349,7 @@ class KCN:
                                 self.book[assed.currency].baseincrement,
                             )
                             for raw_size in self.divide(
-                                self.BASE_KEEP, last_price_quantize,
+                                self.BASE_KEEP, last_price_quantize
                             )
                             for size in self.quantize_plus(
                                 raw_size,
@@ -2399,6 +2399,7 @@ class KCN:
         while True:
             match await do_async(
                 Ok(_)
+                for _ in await self.sleep_to(sleep_on=1)
                 for margin_account in await self.get_api_v3_margin_accounts(
                     params={
                         "quoteCurrency": "USDT",
@@ -2413,6 +2414,7 @@ class KCN:
     async def auto_close_sell_orders(self: Self) -> Result[None, Exception]:
         """."""
         while True:
+            await self.sleep_to(sleep_on=1)
             for symbol in self.book:
                 match await do_async(
                     Ok(active_orders)
