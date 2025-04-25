@@ -1476,23 +1476,31 @@ class KCN:
 
         return Ok(None)
 
+    async def processing_ws_matching(
+        self: Self, msg: str | bytes
+    ) -> Result[None, Exception]:
+        """."""
+        match await do_async(
+            Ok(None)
+            for value in self.parse_bytes_to_dict(msg)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                OrderChangeV2.Res,
+                value,
+            )
+            for _ in await self.event_matching(data_dataclass)
+        ):
+            case Err(exc):
+                return Err(exc)
+        return Ok(None)
+
     async def listen_matching_event(
         self: Self,
         ws_inst: ClientConnection,
     ) -> Result[None, Exception]:
         """Infinity loop for listen candle msgs."""
         async for msg in ws_inst:
-            match await do_async(
-                Ok(None)
-                for value in self.parse_bytes_to_dict(msg)
-                for data_dataclass in self.convert_to_dataclass_from_dict(
-                    OrderChangeV2.Res,
-                    value,
-                )
-                for _ in await self.event_matching(data_dataclass)
-            ):
-                case Err(exc):
-                    return Err(exc)
+            asyncio.create_task(self.processing_ws_matching(msg))
+
         return Ok(None)
 
     def export_account_usdt_from_api_v3_margin_accounts(
