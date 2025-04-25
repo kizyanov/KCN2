@@ -52,7 +52,6 @@ class Book:
     last_price: Decimal
     baseincrement: Decimal
     priceincrement: Decimal
-    borrow: Decimal
 
 
 @dataclass(frozen=True)
@@ -109,8 +108,15 @@ class ApiV3HfMarginOrderPOST:
     class Res:
         """Parse response request."""
 
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            orderId: str
+
         code: str
         msg: str | None
+        data: Data
 
 
 @dataclass(frozen=True)
@@ -185,7 +191,7 @@ class ApiV3HfMarginOrdersActiveGET:
             size: str
             price: str
 
-        data: list[Data]
+        data: list[Data] | None
         code: str
         msg: str | None
 
@@ -244,7 +250,7 @@ class OrderChangeV2:
         class Data:
             """."""
 
-            symbol: str
+            symbol: str  # BTC-USDT
             side: str
             orderType: str
             type: str
@@ -667,7 +673,7 @@ class KCN:
     async def delete_api_v3_hf_margin_orders(
         self: Self,
         order_id: str,
-        params: dict[str, str],
+        symbol: str,
     ) -> Result[ApiV3HfMarginOrdersDELETE.Res, Exception]:
         """Cancel order by `id`.
 
@@ -679,7 +685,7 @@ class KCN:
         method = "DELETE"
         return await do_async(
             Ok(checked_dict)
-            for params_in_url in self.get_url_params_as_str(params)
+            for params_in_url in self.get_url_params_as_str({"symbol": symbol})
             for uri_params in self.cancatinate_str(uri, params_in_url)
             for full_url in self.get_full_url(self.BASE_URL, uri_params)
             for now_time in self.get_now_time()
@@ -1362,14 +1368,31 @@ class KCN:
                 "borrow": Decimal,
             }
         }
+        book_orders = {
+            "ADA": {
+                "sell": [],
+                "buy": []
+            },
+            "JUP": {
+                "sell": [],
+                "buy": []
+            }
+        }
         """
         self.book: dict[str, Book] = {
             ticket: Book(
                 last_price=Decimal("0"),
                 baseincrement=Decimal("0"),
-                borrow=Decimal("0"),
                 priceincrement=Decimal("0"),
             )
+            for ticket in self.ALL_CURRENCY
+            if isinstance(ticket, str)
+        }
+        self.book_orders: dict[str, dict[str, list[str]]] = {
+            ticket: {
+                "sell": [],
+                "buy": [],
+            }
             for ticket in self.ALL_CURRENCY
             if isinstance(ticket, str)
         }
@@ -1427,37 +1450,8 @@ class KCN:
                     ):
                         case Err(exc):
                             logger.exception(exc)
-                elif (
-                    data.side == "buy"
-                    and symbol_name in self.book
-                    and self.book[symbol_name].borrow > 0
-                ):
-                    # create new orders for return borrow
-                    match await do_async(
-                        Ok(_) for _ in await self.make_buy_margin_order(symbol_name)
-                    ):
-                        case Err(exc):
-                            logger.exception(exc)
             case Err(exc):
                 logger.exception(exc)
-        return Ok(None)
-
-    def order_matching(
-        self: Self,
-        data: OrderChangeV2.Res,
-    ) -> Result[None, Exception]:
-        """Event when order parted filled."""
-        match do(
-            Ok(symbol) for symbol in self.replace_quote_in_symbol_name(data.data.symbol)
-        ):
-            case Ok(symbol):
-                if symbol in self.book and data.data.matchSize:
-                    if data.data.side == "sell":
-                        self.book[symbol].borrow += Decimal(data.data.matchSize)
-                        logger.success(f"Increase borrow on {data.data.matchSize}")
-                    else:
-                        self.book[symbol].borrow -= Decimal(data.data.matchSize)
-                        logger.success(f"Decrease borrow on {data.data.matchSize}")
         return Ok(None)
 
     async def event_matching(
@@ -1467,12 +1461,10 @@ class KCN:
         """."""
         if data.data.orderType == "limit":
             match data.data.type:
+                case "open":  # appear new order
+                    asyncio.create_task(self.close_older_sell_order(data))
                 case "filled":  # complete fill order
-                    match await self.order_filled(data.data):
-                        case Err(exc):
-                            logger.exception(exc)
-                case "match":  # partician fill order
-                    self.order_matching(data)
+                    asyncio.create_task(self.order_filled(data.data))
         return Ok(None)
 
     async def event_candll(
@@ -1491,6 +1483,23 @@ class KCN:
                     await self.make_sell_margin_order(symbol)
         return Ok(None)
 
+    async def processing_ws_candle(
+        self: Self, msg: str | bytes
+    ) -> Result[None, Exception]:
+        """."""
+        match await do_async(
+            Ok(None)
+            for value in self.parse_bytes_to_dict(msg)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                MarketCandle.Res,
+                value,
+            )
+            for _ in await self.event_candll(data_dataclass)
+        ):
+            case Err(exc):
+                return Err(exc)
+        return Ok(None)
+
     async def listen_candle_event(
         self: Self,
         ws_inst: ClientConnection,
@@ -1498,17 +1507,25 @@ class KCN:
         """Infinity loop for listen candle msgs."""
         logger.warning("listen_candle_event")
         async for msg in ws_inst:
-            match await do_async(
-                Ok(None)
-                for value in self.parse_bytes_to_dict(msg)
-                for data_dataclass in self.convert_to_dataclass_from_dict(
-                    MarketCandle.Res,
-                    value,
-                )
-                for _ in await self.event_candll(data_dataclass)
-            ):
-                case Err(exc):
-                    return Err(exc)
+            asyncio.create_task(self.processing_ws_candle(msg))
+
+        return Ok(None)
+
+    async def processing_ws_matching(
+        self: Self, msg: str | bytes
+    ) -> Result[None, Exception]:
+        """."""
+        match await do_async(
+            Ok(None)
+            for value in self.parse_bytes_to_dict(msg)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                OrderChangeV2.Res,
+                value,
+            )
+            for _ in await self.event_matching(data_dataclass)
+        ):
+            case Err(exc):
+                return Err(exc)
         return Ok(None)
 
     async def listen_matching_event(
@@ -1517,17 +1534,8 @@ class KCN:
     ) -> Result[None, Exception]:
         """Infinity loop for listen candle msgs."""
         async for msg in ws_inst:
-            match await do_async(
-                Ok(None)
-                for value in self.parse_bytes_to_dict(msg)
-                for data_dataclass in self.convert_to_dataclass_from_dict(
-                    OrderChangeV2.Res,
-                    value,
-                )
-                for _ in await self.event_matching(data_dataclass)
-            ):
-                case Err(exc):
-                    return Err(exc)
+            asyncio.create_task(self.processing_ws_matching(msg))
+
         return Ok(None)
 
     def export_account_usdt_from_api_v3_margin_accounts(
@@ -1651,7 +1659,7 @@ class KCN:
         for order in data:
             await self.delete_api_v3_hf_margin_orders(
                 order["id"],
-                {"symbol": order["symbol"]},
+                order["symbol"],
             )
         return Ok(None)
 
@@ -1843,32 +1851,13 @@ class KCN:
             for client_id in self.format_to_str_uuid(default_uuid4)
         )
 
-    async def wrap_post_api_v3_hf_margin_order(
-        self: Self,
-        params_order_up: dict[str, str | bool],
-    ) -> Result[ApiV3HfMarginOrderPOST.Res, Exception]:
-        """."""
-        match await do_async(
-            Ok(order_id)
-            for order_id in await self.post_api_v3_hf_margin_order(params_order_up)
-        ):
-            case Ok(order_id):
-                return Ok(order_id)
-            case Err(exc):
-                return Err(exc)
-        error_msg = (
-            f"Unexpected error with post_api_v3_hf_margin_order:{params_order_up}"
-        )
-        await self.send_telegram_msg(error_msg)
-        return Err(Exception(error_msg))
-
     async def make_buy_margin_order(
         self: Self,
         ticket: str,
     ) -> Result[None, Exception]:
         """."""
         match await do_async(
-            Ok(_)
+            Ok(order_id)
             for order_down in self.calc_down(ticket)
             for params_order_down in self.complete_margin_order(
                 side=order_down.side,
@@ -1876,11 +1865,32 @@ class KCN:
                 price=order_down.price,
                 size=order_down.size,
             )
-            for _ in await self.wrap_post_api_v3_hf_margin_order(params_order_down)
+            for order_id in await self.post_api_v3_hf_margin_order(params_order_down)
+            for _ in self.save_buy_order_id(ticket, order_id.data.orderId)
         ):
             case Err(exc):
                 await self.send_telegram_msg(f"{exc}")
                 logger.exception(exc)
+        return Ok(None)
+
+    def save_sell_order_id(
+        self: Self,
+        symbol: str,
+        order_id: str,
+    ) -> Result[None, Exception]:
+        """Save sell order id."""
+        if symbol in self.book:
+            self.book_orders[symbol]["sell"].append(order_id)
+        return Ok(None)
+
+    def save_buy_order_id(
+        self: Self,
+        symbol: str,
+        order_id: str,
+    ) -> Result[None, Exception]:
+        """Save buy order id."""
+        if symbol in self.book:
+            self.book_orders[symbol]["buy"].append(order_id)
         return Ok(None)
 
     async def make_sell_margin_order(
@@ -1889,7 +1899,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         match await do_async(
-            Ok(_)
+            Ok(order_id)
             for order_up in self.calc_up(ticket)
             for params_order_up in self.complete_margin_order(
                 side=order_up.side,
@@ -1897,7 +1907,8 @@ class KCN:
                 price=order_up.price,
                 size=order_up.size,
             )
-            for _ in await self.wrap_post_api_v3_hf_margin_order(params_order_up)
+            for order_id in await self.post_api_v3_hf_margin_order(params_order_up)
+            for _ in self.save_sell_order_id(ticket, order_id.data.orderId)
         ):
             case Err(exc):
                 await self.send_telegram_msg(f"{exc}")
@@ -1906,72 +1917,14 @@ class KCN:
 
     async def start_up_orders(self: Self) -> Result[None, Exception]:
         """Make init orders."""
-        # wait while matcher would be ready
         await asyncio.sleep(5)
 
         for ticket in self.book:
-            await self.make_sell_margin_order(ticket)
-            if self.book[ticket].borrow > Decimal("0"):
-                # if need borrow assert
-                match await do_async(
-                    Ok(_) for _ in await self.make_buy_margin_order(ticket)
-                ):
-                    case Err(exc):
-                        logger.exception(exc)
-        return Ok(None)
-
-    def fill_borrow_to_current_token(
-        self: Self,
-        symbol: str,
-        borrow: Decimal,
-    ) -> Result[None, Exception]:
-        """Fill borrow current symbol."""
-        try:
-            self.book[symbol].borrow = borrow
-        except IndexError as exc:
-            return Err(exc)
-        return Ok(None)
-
-    def fill_borrow_all_tokens(
-        self: Self,
-        data: list[ApiV3MarginAccountsGET.Res.Data.Account],
-    ) -> Result[None, Exception]:
-        """Fill borrow to all tokens in book."""
-        for ticket in data:
-            match do(
-                Ok(None)
-                for borrow_decimal in self.data_to_decimal(ticket.liability)
-                for _ in self.fill_borrow_to_current_token(
-                    ticket.currency,
-                    borrow_decimal,
-                )
-            ):
+            match await self.make_sell_margin_order(ticket):
                 case Err(exc):
-                    return Err(exc)
+                    logger.exception(exc)
 
         return Ok(None)
-
-    def filter_ticket_by_book_borrow(
-        self: Self,
-        data: ApiV3MarginAccountsGET.Res,
-    ) -> Result[list[ApiV3MarginAccountsGET.Res.Data.Account], Exception]:
-        """."""
-        return Ok(
-            [ticket for ticket in data.data.accounts if ticket.currency in self.book]
-        )
-
-    async def fill_borrow(self: Self) -> Result[None, Exception]:
-        """Fill all borrow by ENVs."""
-        return await do_async(
-            Ok(None)
-            for borrow_accounts in await self.get_api_v3_margin_accounts(
-                params={
-                    "quoteCurrency": "USDT",
-                },
-            )
-            for borrow_to_fill in self.filter_ticket_by_book_borrow(borrow_accounts)
-            for _ in self.fill_borrow_all_tokens(borrow_to_fill)
-        )
 
     def fill_one_symbol_base_increment(
         self: Self,
@@ -2273,7 +2226,8 @@ class KCN:
                         )
                     ):
                         case Ok(order):
-                            open_orders += order.data
+                            if order.data:
+                                open_orders += order.data
         return Ok(open_orders)
 
     def filter_open_order_by_symbol(
@@ -2289,19 +2243,20 @@ class KCN:
             ]
         )
 
-    async def tt(self: Self) -> Result[None, Exception]:
+    async def massive_delete_order_by_symbol(self: Self) -> Result[None, Exception]:
         """."""
-        for ticket in self.book:
+        for symbol in self.book:
             match await do_async(
                 Ok(d)
                 for d in await self.delete_api_v3_hf_margin_orders_all(
-                    params={"symbol": f"{ticket}-USDT", "tradeType": "MARGIN_TRADE"}
+                    params={
+                        "symbol": f"{symbol}-USDT",
+                        "tradeType": "MARGIN_TRADE",
+                    }
                 )
             ):
                 case Err(exc):
                     logger.exception(exc)
-                case Ok(d):
-                    logger.success(d)
         return Ok(None)
 
     async def pre_init(self: Self) -> Result[Self, Exception]:
@@ -2316,14 +2271,10 @@ class KCN:
             for _ in self.init_envs()
             for _ in await self.create_db_pool()
             for _ in self.create_book()
-            for open_orders in await self.get_all_open_orders()
-            for orders_for_cancel in self.filter_open_order_by_symbol(open_orders)
-            for _ in await self.massive_cancel_order(orders_for_cancel)
+            for _ in await self.massive_delete_order_by_symbol()
             for _ in await self.sleep_to(sleep_on=5)
-            for _ in await self.fill_borrow()
             for _ in await self.fill_increment()
             for _ in await self.fill_last_price()
-            for _ in await self.tt()
             for _ in self.logger_success(self.book)
         )
 
@@ -2338,23 +2289,13 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         for assed in data.data.accounts:
-            if assed.currency in self.book:
-                logger.warning(assed)
-                if Decimal(assed.liability) != 0:
+            if assed.currency in self.book or assed.currency == "USDT":
+                liability = Decimal(assed.liability)
+                if liability != 0:
                     while True:
+                        size = liability / 2
                         match await do_async(
                             Ok(_)
-                            for last_price_quantize in self.quantize_minus(
-                                self.book[assed.currency].last_price,
-                                self.book[assed.currency].baseincrement,
-                            )
-                            for raw_size in self.divide(
-                                self.BASE_KEEP, last_price_quantize
-                            )
-                            for size in self.quantize_plus(
-                                raw_size,
-                                self.book[assed.currency].baseincrement,
-                            )
                             for _ in await self.post_api_v3_margin_repay(
                                 data={
                                     "currency": assed.currency,
@@ -2366,29 +2307,6 @@ class KCN:
                             for _ in self.logger_success(
                                 f"Repay:{assed.currency} on {size}"
                             )
-                            for _ in await self.sleep_to(sleep_on=0.1)
-                        ):
-                            case Err(exc):
-                                logger.exception(exc)
-                                break
-            elif assed.currency == "USDT":
-                logger.warning(assed)
-                if Decimal(assed.liability) != 0:
-                    while True:
-                        match await do_async(
-                            Ok(_)
-                            for _ in await self.post_api_v3_margin_repay(
-                                data={
-                                    "currency": assed.currency,
-                                    "size": 10.0,
-                                    "isIsolated": False,
-                                    "isHf": True,
-                                }
-                            )
-                            for _ in self.logger_success(
-                                f"Repay:{assed.currency} on {10}"
-                            )
-                            for _ in await self.sleep_to(sleep_on=0.1)
                         ):
                             case Err(exc):
                                 logger.exception(exc)
@@ -2399,9 +2317,9 @@ class KCN:
     async def repay_assets(self: Self) -> Result[None, Exception]:
         """Repay all assets."""
         while True:
+            await asyncio.sleep(60)
             match await do_async(
                 Ok(_)
-                for _ in await self.sleep_to(sleep_on=0.1)
                 for margin_account in await self.get_api_v3_margin_accounts(
                     params={
                         "quoteCurrency": "USDT",
@@ -2413,45 +2331,83 @@ class KCN:
                     logger.exception(exc)
         return Ok(None)
 
-    async def auto_close_sell_orders(self: Self) -> Result[None, Exception]:
+    async def close_older_sell_order(
+        self: Self,
+        data: OrderChangeV2.Res,
+    ) -> Result[None, Exception]:
         """."""
-        while True:
-            for symbol in self.book:
-                match await do_async(
-                    Ok(active_orders)
-                    for _ in await self.sleep_to(sleep_on=0.1)
-                    for active_orders in await self.get_api_v3_hf_margin_orders_active(
-                        params={
-                            "symbol": f"{symbol}-USDT",
-                            "tradeType": "MARGIN_TRADE",
-                        }
-                    )
-                ):
-                    case Ok(active_orders):
-                        for orde in active_orders.data:
-                            logger.info(
-                                f"{orde.symbol}:{orde.side}:{orde.size}:{orde.price}"
-                            )
-                        for order in sorted(
-                            [
-                                order
-                                for order in active_orders.data
-                                if order.side == "sell"
-                            ],
-                            key=lambda x: Decimal(x.price),
-                        )[1:]:
-                            match await do_async(
-                                Ok(_)
-                                for _ in await self.delete_api_v3_hf_margin_orders(
-                                    order.id,
-                                    params={"symbol": order.symbol},
-                                )
-                            ):
-                                case Err(exc):
-                                    logger.exception(exc)
+        await asyncio.sleep(1)  # 1s delay
+        symbol = data.data.symbol.replace("-USDT", "")
+        if (
+            data.data.side == "sell"
+            and symbol in self.book_orders
+            and len(self.book_orders[symbol]["sell"]) > 1
+        ):
+            match await do_async(
+                Ok(_)
+                for _ in await self.delete_api_v3_hf_margin_orders(
+                    self.book_orders[symbol]["sell"].pop(0),
+                    data.data.symbol,
+                )
+                for _ in await self.sleep_to(sleep_on=1)
+                for _ in await self.post_api_v3_margin_repay(
+                    data={
+                        "currency": symbol,
+                        "size": float(data.data.size or 1),
+                        "isIsolated": False,
+                        "isHf": True,
+                    }
+                )
+            ):
+                case Err(exc):
+                    logger.exception(exc)
+        return Ok(None)
 
-                    case Err(exc):
-                        logger.exception(exc)
+    async def close_redundant_orders(
+        self: Self,
+        symbol: str,
+    ) -> Result[None, Exception]:
+        """Close redundant orders."""
+        match await do_async(
+            Ok(active_orders)
+            for active_orders in await self.get_api_v3_hf_margin_orders_active(
+                params={
+                    "symbol": symbol,
+                    "tradeType": "MARGIN_TRADE",
+                }
+            )
+        ):
+            case Ok(active_orders):
+                if active_orders.data:
+                    for orde in active_orders.data:
+                        logger.info(
+                            f"{orde.symbol}:{orde.side}:{orde.size}:{orde.price}"
+                        )
+                    for order in sorted(
+                        [order for order in active_orders.data if order.side == "sell"],
+                        key=lambda x: Decimal(x.price),
+                    )[1:]:
+                        match await do_async(
+                            Ok(_)
+                            for _ in await self.delete_api_v3_hf_margin_orders(
+                                order.id,
+                                order.symbol,
+                            )
+                            for _ in await self.post_api_v3_margin_repay(
+                                data={
+                                    "currency": order.symbol,
+                                    "size": float(order.size),
+                                    "isIsolated": False,
+                                    "isHf": True,
+                                }
+                            )
+                        ):
+                            case Err(exc):
+                                logger.exception(exc)
+
+            case Err(exc):
+                logger.exception(exc)
+        return Ok(None)
 
     async def infinity_task(self: Self) -> Result[None, Exception]:
         """Infinity run tasks."""
@@ -2462,7 +2418,6 @@ class KCN:
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
                 tg.create_task(self.repay_assets()),
-                tg.create_task(self.auto_close_sell_orders()),
             ]
 
         for task in tasks:
