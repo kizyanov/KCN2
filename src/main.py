@@ -2294,7 +2294,7 @@ class KCN:
                 liability = Decimal(assed.liability)
                 if liability != 0:
                     while True:
-                        size = liability / 10
+                        size = liability / 2
                         match await do_async(
                             Ok(_)
                             for _ in await self.post_api_v3_margin_repay(
@@ -2308,7 +2308,7 @@ class KCN:
                             for _ in self.logger_success(
                                 f"Repay:{assed.currency} on {size}"
                             )
-                            for _ in await self.sleep_to(sleep_on=0.1)
+                            for _ in await self.sleep_to(sleep_on=2)
                         ):
                             case Err(exc):
                                 logger.exception(exc)
@@ -2319,7 +2319,6 @@ class KCN:
     async def repay_assets(self: Self) -> Result[None, Exception]:
         """Repay all assets."""
         while True:
-            await asyncio.sleep(60)
             match await do_async(
                 Ok(_)
                 for margin_account in await self.get_api_v3_margin_accounts(
@@ -2338,7 +2337,7 @@ class KCN:
         data: OrderChangeV2.Res,
     ) -> Result[None, Exception]:
         """."""
-        await asyncio.sleep(10)  # 1s delay
+        await asyncio.sleep(5)  # 1s delay
         symbol = data.data.symbol.replace("-USDT", "")
         if (
             data.data.side == "sell"
