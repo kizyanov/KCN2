@@ -1426,12 +1426,10 @@ class KCN:
         """."""
         if data.data.orderType == "limit":
             match data.data.type:
-                case "open":
-                    await self.close_older_sell_order(data)
+                case "open":  # appear new order
+                    asyncio.create_task(self.close_older_sell_order(data))
                 case "filled":  # complete fill order
-                    match await self.order_filled(data.data):
-                        case Err(exc):
-                            logger.exception(exc)
+                    asyncio.create_task(self.order_filled(data.data))
         return Ok(None)
 
     async def event_candll(
@@ -2303,6 +2301,7 @@ class KCN:
         data: OrderChangeV2.Res,
     ) -> Result[None, Exception]:
         """."""
+        await asyncio.sleep(1)  # 1s delay
         symbol = data.data.symbol.replace("-USDT", "")
         if (
             data.data.side == "sell"
@@ -2315,6 +2314,7 @@ class KCN:
                     self.book_orders[symbol]["sell"].pop(0),
                     data.data.symbol,
                 )
+                for _ in await self.sleep_to(sleep_on=1)
                 for _ in await self.post_api_v3_margin_repay(
                     data={
                         "currency": symbol,
