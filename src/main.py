@@ -1869,7 +1869,6 @@ class KCN:
             for _ in self.save_buy_order_id(ticket, order_id.data.orderId)
         ):
             case Err(exc):
-                await self.send_telegram_msg(f"{exc}")
                 logger.exception(exc)
         return Ok(None)
 
@@ -1911,7 +1910,6 @@ class KCN:
             for _ in self.save_sell_order_id(ticket, order_id.data.orderId)
         ):
             case Err(exc):
-                await self.send_telegram_msg(f"{exc}")
                 logger.exception(exc)
         return Ok(None)
 
