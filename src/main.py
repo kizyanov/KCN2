@@ -2278,7 +2278,7 @@ class KCN:
             for _ in self.logger_success(self.book)
         )
 
-    async def sleep_to(self: Self, *, sleep_on: int = 1) -> Result[None, Exception]:
+    async def sleep_to(self: Self, *, sleep_on: float = 1) -> Result[None, Exception]:
         """."""
         await asyncio.sleep(sleep_on)
         return Ok(None)
@@ -2294,7 +2294,7 @@ class KCN:
                 liability = Decimal(assed.liability)
                 if liability != 0:
                     while True:
-                        size = liability / 2
+                        size = liability / 100
                         match await do_async(
                             Ok(_)
                             for _ in await self.post_api_v3_margin_repay(
@@ -2308,6 +2308,7 @@ class KCN:
                             for _ in self.logger_success(
                                 f"Repay:{assed.currency} on {size}"
                             )
+                            for _ in await self.sleep_to(sleep_on=0.1)
                         ):
                             case Err(exc):
                                 logger.exception(exc)
@@ -2337,7 +2338,7 @@ class KCN:
         data: OrderChangeV2.Res,
     ) -> Result[None, Exception]:
         """."""
-        await asyncio.sleep(1)  # 1s delay
+        await asyncio.sleep(10)  # 1s delay
         symbol = data.data.symbol.replace("-USDT", "")
         if (
             data.data.side == "sell"
