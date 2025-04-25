@@ -185,7 +185,7 @@ class ApiV3HfMarginOrdersActiveGET:
             size: str
             price: str
 
-        data: list[Data]
+        data: list[Data] | None
         code: str
         msg: str | None
 
@@ -2240,7 +2240,8 @@ class KCN:
                         )
                     ):
                         case Ok(order):
-                            open_orders += order.data
+                            if order.data:
+                                open_orders += order.data
         return Ok(open_orders)
 
     def filter_open_order_by_symbol(
@@ -2376,21 +2377,24 @@ class KCN:
             )
         ):
             case Ok(active_orders):
-                for orde in active_orders.data:
-                    logger.info(f"{orde.symbol}:{orde.side}:{orde.size}:{orde.price}")
-                for order in sorted(
-                    [order for order in active_orders.data if order.side == "sell"],
-                    key=lambda x: Decimal(x.price),
-                )[1:]:
-                    match await do_async(
-                        Ok(_)
-                        for _ in await self.delete_api_v3_hf_margin_orders(
-                            order.id,
-                            order.symbol,
+                if active_orders.data:
+                    for orde in active_orders.data:
+                        logger.info(
+                            f"{orde.symbol}:{orde.side}:{orde.size}:{orde.price}"
                         )
-                    ):
-                        case Err(exc):
-                            logger.exception(exc)
+                    for order in sorted(
+                        [order for order in active_orders.data if order.side == "sell"],
+                        key=lambda x: Decimal(x.price),
+                    )[1:]:
+                        match await do_async(
+                            Ok(_)
+                            for _ in await self.delete_api_v3_hf_margin_orders(
+                                order.id,
+                                order.symbol,
+                            )
+                        ):
+                            case Err(exc):
+                                logger.exception(exc)
 
             case Err(exc):
                 logger.exception(exc)
