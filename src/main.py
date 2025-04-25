@@ -2334,7 +2334,7 @@ class KCN:
         data: OrderChangeV2.Res,
     ) -> Result[None, Exception]:
         """."""
-        await asyncio.sleep(5)  # 1s delay
+        await asyncio.sleep(2)  # 2s delay
         symbol = data.data.symbol.replace("-USDT", "")
         if (
             data.data.side == "sell"
