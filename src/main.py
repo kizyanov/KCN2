@@ -52,7 +52,6 @@ class Book:
     last_price: Decimal
     baseincrement: Decimal
     priceincrement: Decimal
-    borrow: Decimal
 
 
 @dataclass(frozen=True)
@@ -1349,7 +1348,6 @@ class KCN:
             ticket: Book(
                 last_price=Decimal("0"),
                 baseincrement=Decimal("0"),
-                borrow=Decimal("0"),
                 priceincrement=Decimal("0"),
             )
             for ticket in self.ALL_CURRENCY
@@ -1417,35 +1415,8 @@ class KCN:
                     ):
                         case Err(exc):
                             logger.exception(exc)
-                elif (
-                    data.side == "buy"
-                    and symbol_name in self.book
-                    and self.book[symbol_name].borrow > 0
-                ):
-                    # create new orders for return borrow
-                    match await do_async(
-                        Ok(_) for _ in await self.make_buy_margin_order(symbol_name)
-                    ):
-                        case Err(exc):
-                            logger.exception(exc)
             case Err(exc):
                 logger.exception(exc)
-        return Ok(None)
-
-    def order_matching(
-        self: Self,
-        data: OrderChangeV2.Res,
-    ) -> Result[None, Exception]:
-        """Event when order parted filled."""
-        match do(
-            Ok(symbol) for symbol in self.replace_quote_in_symbol_name(data.data.symbol)
-        ):
-            case Ok(symbol):
-                if symbol in self.book and data.data.matchSize:
-                    if data.data.side == "sell":
-                        self.book[symbol].borrow += Decimal(data.data.matchSize)
-                    else:
-                        self.book[symbol].borrow -= Decimal(data.data.matchSize)
         return Ok(None)
 
     async def event_matching(
@@ -1461,8 +1432,6 @@ class KCN:
                     match await self.order_filled(data.data):
                         case Err(exc):
                             logger.exception(exc)
-                case "match":  # partician fill order
-                    self.order_matching(data)
         return Ok(None)
 
     async def event_candll(
@@ -1899,72 +1868,14 @@ class KCN:
 
     async def start_up_orders(self: Self) -> Result[None, Exception]:
         """Make init orders."""
-        # wait while matcher would be ready
         await asyncio.sleep(5)
 
         for ticket in self.book:
-            await self.make_sell_margin_order(ticket)
-            if self.book[ticket].borrow > Decimal("0"):
-                # if need borrow assert
-                match await do_async(
-                    Ok(_) for _ in await self.make_buy_margin_order(ticket)
-                ):
-                    case Err(exc):
-                        logger.exception(exc)
-        return Ok(None)
-
-    def fill_borrow_to_current_token(
-        self: Self,
-        symbol: str,
-        borrow: Decimal,
-    ) -> Result[None, Exception]:
-        """Fill borrow current symbol."""
-        try:
-            self.book[symbol].borrow = borrow
-        except IndexError as exc:
-            return Err(exc)
-        return Ok(None)
-
-    def fill_borrow_all_tokens(
-        self: Self,
-        data: list[ApiV3MarginAccountsGET.Res.Data.Account],
-    ) -> Result[None, Exception]:
-        """Fill borrow to all tokens in book."""
-        for ticket in data:
-            match do(
-                Ok(None)
-                for borrow_decimal in self.data_to_decimal(ticket.liability)
-                for _ in self.fill_borrow_to_current_token(
-                    ticket.currency,
-                    borrow_decimal,
-                )
-            ):
+            match await self.make_sell_margin_order(ticket):
                 case Err(exc):
-                    return Err(exc)
+                    logger.exception(exc)
 
         return Ok(None)
-
-    def filter_ticket_by_book_borrow(
-        self: Self,
-        data: ApiV3MarginAccountsGET.Res,
-    ) -> Result[list[ApiV3MarginAccountsGET.Res.Data.Account], Exception]:
-        """."""
-        return Ok(
-            [ticket for ticket in data.data.accounts if ticket.currency in self.book]
-        )
-
-    async def fill_borrow(self: Self) -> Result[None, Exception]:
-        """Fill all borrow by ENVs."""
-        return await do_async(
-            Ok(None)
-            for borrow_accounts in await self.get_api_v3_margin_accounts(
-                params={
-                    "quoteCurrency": "USDT",
-                },
-            )
-            for borrow_to_fill in self.filter_ticket_by_book_borrow(borrow_accounts)
-            for _ in self.fill_borrow_all_tokens(borrow_to_fill)
-        )
 
     def fill_one_symbol_base_increment(
         self: Self,
@@ -2299,7 +2210,6 @@ class KCN:
             for orders_for_cancel in self.filter_open_order_by_symbol(open_orders)
             for _ in await self.massive_cancel_order(orders_for_cancel)
             for _ in await self.sleep_to(sleep_on=5)
-            for _ in await self.fill_borrow()
             for _ in await self.fill_increment()
             for _ in await self.fill_last_price()
             for _ in self.logger_success(self.book)
