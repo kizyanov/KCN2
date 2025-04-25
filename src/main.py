@@ -2289,6 +2289,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         for assed in data.data.accounts:
+            logger.warning(assed)
             if assed.currency in self.book or assed.currency == "USDT":
                 liability = Decimal(assed.liability)
                 if liability != 0:
