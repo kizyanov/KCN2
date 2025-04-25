@@ -2304,12 +2304,15 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         symbol = data.data.symbol.replace("-USDT", "")
-        if symbol in self.book_orders and len(self.book_orders[symbol]["sell"]) > 1:
-            order_id = self.book_orders[symbol]["sell"].pop(0)
+        if (
+            data.data.side == "sell"
+            and symbol in self.book_orders
+            and len(self.book_orders[symbol]["sell"]) > 1
+        ):
             match await do_async(
                 Ok(_)
                 for _ in await self.delete_api_v3_hf_margin_orders(
-                    order_id,
+                    self.book_orders[symbol]["sell"].pop(0),
                     data.data.symbol,
                 )
                 for _ in await self.post_api_v3_margin_repay(
