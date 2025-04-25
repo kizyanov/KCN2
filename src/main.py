@@ -2259,8 +2259,9 @@ class KCN:
         """."""
         for assed in data.data.accounts:
             if assed.liability != "0":
-                while True:
-                    if assed.currency in self.book:
+                if assed.currency in self.book:
+                    base_size = self.BASE_KEEP
+                    while True:
                         match await do_async(
                             Ok(_)
                             for _ in await self.sleep_to(sleep_on=0.5)
@@ -2269,7 +2270,7 @@ class KCN:
                                 self.book[assed.currency].baseincrement,
                             )
                             for raw_size in self.divide(
-                                self.BASE_KEEP,
+                                base_size,
                                 last_price_quantize,
                             )
                             for size in self.quantize_plus(
@@ -2291,25 +2292,29 @@ class KCN:
                             case Err(exc):
                                 logger.exception(exc)
                                 break
-                    elif assed.currency == "USDT":
+                        base_size *= 2
+                elif assed.currency == "USDT":
+                    base_size = self.BASE_KEEP
+                    while True:
                         match await do_async(
                             Ok(_)
                             for _ in await self.sleep_to(sleep_on=0.5)
                             for _ in await self.post_api_v3_margin_repay(
                                 data={
                                     "currency": assed.currency,
-                                    "size": 10.0,
+                                    "size": float(base_size),
                                     "isIsolated": False,
                                     "isHf": True,
                                 }
                             )
                             for _ in self.logger_success(
-                                f"Repay:{assed.currency} on {10.0}"
+                                f"Repay:{assed.currency} on {base_size}"
                             )
                         ):
                             case Err(exc):
                                 logger.exception(exc)
                                 break
+                        base_size *= 2
         return Ok(None)
 
     async def repay_assets(self: Self) -> Result[None, Exception]:
@@ -2334,7 +2339,7 @@ class KCN:
         data: OrderChangeV2.Res,
     ) -> Result[None, Exception]:
         """."""
-        await asyncio.sleep(2)  # 2s delay
+        await asyncio.sleep(1)  # 1s delay
         symbol = data.data.symbol.replace("-USDT", "")
         if (
             data.data.side == "sell"
