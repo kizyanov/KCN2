@@ -1448,6 +1448,23 @@ class KCN:
                     await self.make_sell_margin_order(symbol)
         return Ok(None)
 
+    async def processing_ws_candle(
+        self: Self, msg: str | bytes
+    ) -> Result[None, Exception]:
+        """."""
+        match await do_async(
+            Ok(None)
+            for value in self.parse_bytes_to_dict(msg)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                MarketCandle.Res,
+                value,
+            )
+            for _ in await self.event_candll(data_dataclass)
+        ):
+            case Err(exc):
+                return Err(exc)
+        return Ok(None)
+
     async def listen_candle_event(
         self: Self,
         ws_inst: ClientConnection,
@@ -1455,17 +1472,8 @@ class KCN:
         """Infinity loop for listen candle msgs."""
         logger.warning("listen_candle_event")
         async for msg in ws_inst:
-            match await do_async(
-                Ok(None)
-                for value in self.parse_bytes_to_dict(msg)
-                for data_dataclass in self.convert_to_dataclass_from_dict(
-                    MarketCandle.Res,
-                    value,
-                )
-                for _ in await self.event_candll(data_dataclass)
-            ):
-                case Err(exc):
-                    return Err(exc)
+            asyncio.create_task(self.processing_ws_candle(msg))
+
         return Ok(None)
 
     async def listen_matching_event(
