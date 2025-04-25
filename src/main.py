@@ -1407,24 +1407,6 @@ class KCN:
                 logger.exception(exc)
         return Ok(None)
 
-    def order_matching(
-        self: Self,
-        data: OrderChangeV2.Res,
-    ) -> Result[None, Exception]:
-        """Event when order parted filled."""
-        match do(
-            Ok(symbol) for symbol in self.replace_quote_in_symbol_name(data.data.symbol)
-        ):
-            case Ok(symbol):
-                if symbol in self.book and data.data.matchSize:
-                    if data.data.side == "sell":
-                        self.book[symbol].borrow += Decimal(data.data.matchSize)
-                        logger.success(f"Increase borrow on {data.data.matchSize}")
-                    else:
-                        self.book[symbol].borrow -= Decimal(data.data.matchSize)
-                        logger.success(f"Decrease borrow on {data.data.matchSize}")
-        return Ok(None)
-
     async def event_matching(
         self: Self,
         data: OrderChangeV2.Res,
@@ -1438,8 +1420,6 @@ class KCN:
                     match await self.order_filled(data.data):
                         case Err(exc):
                             logger.exception(exc)
-                case "match":  # partician fill order
-                    self.order_matching(data)
         return Ok(None)
 
     async def event_candll(
@@ -2391,6 +2371,14 @@ class KCN:
                             for _ in await self.delete_api_v3_hf_margin_orders(
                                 order.id,
                                 order.symbol,
+                            )
+                            for _ in await self.post_api_v3_margin_repay(
+                                data={
+                                    "currency": order.symbol,
+                                    "size": float(order.size),
+                                    "isIsolated": False,
+                                    "isHf": True,
+                                }
                             )
                         ):
                             case Err(exc):
