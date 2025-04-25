@@ -2262,7 +2262,7 @@ class KCN:
                 while True:
                     if assed.currency in self.book:
                         match await do_async(
-                            Ok(_)
+                            Ok(size)
                             for _ in await self.sleep_to(sleep_on=0.5)
                             for last_price_quantize in self.quantize_minus(
                                 self.book[assed.currency].last_price,
@@ -2276,22 +2276,31 @@ class KCN:
                                 raw_size,
                                 self.book[assed.currency].baseincrement,
                             )
-                            for _ in await self.post_api_v3_margin_repay(
-                                data={
-                                    "currency": assed.currency,
-                                    "size": float(size),
-                                    "isIsolated": False,
-                                    "isHf": True,
-                                }
-                            )
-                            for _ in self.logger_success(
-                                f"Repay:{assed.currency} on {size}"
-                            )
                         ):
+                            case Ok(size):
+                                if Decimal(assed.liability) > size:
+                                    match await do_async(
+                                        Ok(_)
+                                        for _ in await self.post_api_v3_margin_repay(
+                                            data={
+                                                "currency": assed.currency,
+                                                "size": float(size),
+                                                "isIsolated": False,
+                                                "isHf": True,
+                                            }
+                                        )
+                                        for _ in self.logger_success(
+                                            f"Repay:{assed.currency} on {size}"
+                                        )
+                                    ):
+                                        case Err(exc):
+                                            logger.exception(exc)
                             case Err(exc):
                                 logger.exception(exc)
                                 break
-                    elif assed.currency == "USDT":
+                    elif assed.currency == "USDT" and Decimal(
+                        assed.liability
+                    ) > Decimal("10.0"):
                         match await do_async(
                             Ok(_)
                             for _ in await self.sleep_to(sleep_on=0.5)
