@@ -116,7 +116,7 @@ class ApiV3HfMarginOrderPOST:
 
         code: str
         msg: str | None
-        data: Data
+        data: Data | None
 
 
 @dataclass(frozen=True)
@@ -2265,7 +2265,7 @@ class KCN:
                     if assed.currency in self.book:
                         match await do_async(
                             Ok(_)
-                            for _ in await self.sleep_to(sleep_on=1)
+                            for _ in await self.sleep_to(sleep_on=0.5)
                             for last_price_quantize in self.quantize_minus(
                                 self.book[assed.currency].last_price,
                                 self.book[assed.currency].baseincrement,
@@ -2296,7 +2296,7 @@ class KCN:
                     elif assed.currency == "USDT":
                         match await do_async(
                             Ok(_)
-                            for _ in await self.sleep_to(sleep_on=1)
+                            for _ in await self.sleep_to(sleep_on=0.5)
                             for _ in await self.post_api_v3_margin_repay(
                                 data={
                                     "currency": assed.currency,
