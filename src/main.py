@@ -2294,7 +2294,7 @@ class KCN:
                 liability = Decimal(assed.liability)
                 if liability != 0:
                     while True:
-                        size = liability / 10
+                        size = liability / 2
                         match await do_async(
                             Ok(_)
                             for _ in await self.post_api_v3_margin_repay(
