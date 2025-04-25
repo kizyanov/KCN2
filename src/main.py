@@ -168,7 +168,7 @@ class ApiV3HfMarginOrderActiveSymbolsGET:
 
             symbols: list[str]
 
-        data: Data
+        data: Data | str
         code: str
         msg: str | None
 
@@ -2200,35 +2200,6 @@ class KCN:
             return Ok(None)
         except ConnectionRefusedError as exc:
             return Err(exc)
-
-    async def get_all_open_orders(
-        self: Self,
-    ) -> Result[list[ApiV3HfMarginOrdersActiveGET.Res.Data], Exception]:
-        """Get all open orders."""
-        open_orders: list[ApiV3HfMarginOrdersActiveGET.Res.Data] = []
-        match await do_async(
-            Ok(symbols.data.symbols)
-            for symbols in await self.get_api_v3_hf_margin_order_active_symbols(
-                params={
-                    "tradeType": "MARGIN_TRADE",
-                }
-            )
-        ):
-            case Ok(symbols):
-                for symbol in symbols:
-                    match await do_async(
-                        Ok(order)
-                        for order in await self.get_api_v3_hf_margin_orders_active(
-                            params={
-                                "symbol": symbol,
-                                "tradeType": "MARGIN_TRADE",
-                            }
-                        )
-                    ):
-                        case Ok(order):
-                            if order.data:
-                                open_orders += order.data
-        return Ok(open_orders)
 
     def filter_open_order_by_symbol(
         self: Self,
