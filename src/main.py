@@ -109,8 +109,15 @@ class ApiV3HfMarginOrderPOST:
     class Res:
         """Parse response request."""
 
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            orderId: str
+
         code: str
         msg: str | None
+        data: Data
 
 
 @dataclass(frozen=True)
@@ -244,7 +251,7 @@ class OrderChangeV2:
         class Data:
             """."""
 
-            symbol: str
+            symbol: str  # BTC-USDT
             side: str
             orderType: str
             type: str
@@ -1327,6 +1334,16 @@ class KCN:
                 "borrow": Decimal,
             }
         }
+        book_orders = {
+            "ADA": {
+                "sell": [],
+                "buy": []
+            },
+            "JUP": {
+                "sell": [],
+                "buy": []
+            }
+        }
         """
         self.book: dict[str, Book] = {
             ticket: Book(
@@ -1335,6 +1352,14 @@ class KCN:
                 borrow=Decimal("0"),
                 priceincrement=Decimal("0"),
             )
+            for ticket in self.ALL_CURRENCY
+            if isinstance(ticket, str)
+        }
+        self.book_orders: dict[str, dict[str, list[str]]] = {
+            ticket: {
+                "sell": [],
+                "buy": [],
+            }
             for ticket in self.ALL_CURRENCY
             if isinstance(ticket, str)
         }
@@ -1407,6 +1432,22 @@ class KCN:
                 logger.exception(exc)
         return Ok(None)
 
+    def order_matching(
+        self: Self,
+        data: OrderChangeV2.Res,
+    ) -> Result[None, Exception]:
+        """Event when order parted filled."""
+        match do(
+            Ok(symbol) for symbol in self.replace_quote_in_symbol_name(data.data.symbol)
+        ):
+            case Ok(symbol):
+                if symbol in self.book and data.data.matchSize:
+                    if data.data.side == "sell":
+                        self.book[symbol].borrow += Decimal(data.data.matchSize)
+                    else:
+                        self.book[symbol].borrow -= Decimal(data.data.matchSize)
+        return Ok(None)
+
     async def event_matching(
         self: Self,
         data: OrderChangeV2.Res,
@@ -1415,11 +1456,13 @@ class KCN:
         if data.data.orderType == "limit":
             match data.data.type:
                 case "open":
-                    await self.close_redundant_orders(data.data.symbol)
+                    await self.close_older_sell_order(data)
                 case "filled":  # complete fill order
                     match await self.order_filled(data.data):
                         case Err(exc):
                             logger.exception(exc)
+                case "match":  # partician fill order
+                    self.order_matching(data)
         return Ok(None)
 
     async def event_candll(
@@ -1790,32 +1833,13 @@ class KCN:
             for client_id in self.format_to_str_uuid(default_uuid4)
         )
 
-    async def wrap_post_api_v3_hf_margin_order(
-        self: Self,
-        params_order_up: dict[str, str | bool],
-    ) -> Result[ApiV3HfMarginOrderPOST.Res, Exception]:
-        """."""
-        match await do_async(
-            Ok(order_id)
-            for order_id in await self.post_api_v3_hf_margin_order(params_order_up)
-        ):
-            case Ok(order_id):
-                return Ok(order_id)
-            case Err(exc):
-                return Err(exc)
-        error_msg = (
-            f"Unexpected error with post_api_v3_hf_margin_order:{params_order_up}"
-        )
-        await self.send_telegram_msg(error_msg)
-        return Err(Exception(error_msg))
-
     async def make_buy_margin_order(
         self: Self,
         ticket: str,
     ) -> Result[None, Exception]:
         """."""
         match await do_async(
-            Ok(_)
+            Ok(order_id)
             for order_down in self.calc_down(ticket)
             for params_order_down in self.complete_margin_order(
                 side=order_down.side,
@@ -1823,11 +1847,32 @@ class KCN:
                 price=order_down.price,
                 size=order_down.size,
             )
-            for _ in await self.wrap_post_api_v3_hf_margin_order(params_order_down)
+            for order_id in await self.post_api_v3_hf_margin_order(params_order_down)
+            for _ in self.save_buy_order_id(ticket, order_id.data.orderId)
         ):
             case Err(exc):
                 await self.send_telegram_msg(f"{exc}")
                 logger.exception(exc)
+        return Ok(None)
+
+    def save_sell_order_id(
+        self: Self,
+        symbol: str,
+        order_id: str,
+    ) -> Result[None, Exception]:
+        """Save sell order id."""
+        if symbol in self.book:
+            self.book_orders[symbol]["sell"].append(order_id)
+        return Ok(None)
+
+    def save_buy_order_id(
+        self: Self,
+        symbol: str,
+        order_id: str,
+    ) -> Result[None, Exception]:
+        """Save buy order id."""
+        if symbol in self.book:
+            self.book_orders[symbol]["buy"].append(order_id)
         return Ok(None)
 
     async def make_sell_margin_order(
@@ -1836,7 +1881,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         match await do_async(
-            Ok(_)
+            Ok(order_id)
             for order_up in self.calc_up(ticket)
             for params_order_up in self.complete_margin_order(
                 side=order_up.side,
@@ -1844,7 +1889,8 @@ class KCN:
                 price=order_up.price,
                 size=order_up.size,
             )
-            for _ in await self.wrap_post_api_v3_hf_margin_order(params_order_up)
+            for order_id in await self.post_api_v3_hf_margin_order(params_order_up)
+            for _ in self.save_sell_order_id(ticket, order_id.data.orderId)
         ):
             case Err(exc):
                 await self.send_telegram_msg(f"{exc}")
@@ -2337,6 +2383,33 @@ class KCN:
                     },
                 )
                 for _ in await self.repay(margin_account)
+            ):
+                case Err(exc):
+                    logger.exception(exc)
+        return Ok(None)
+
+    async def close_older_sell_order(
+        self: Self,
+        data: OrderChangeV2.Res,
+    ) -> Result[None, Exception]:
+        """."""
+        symbol = data.data.symbol.replace("-USDT", "")
+        if symbol in self.book_orders and len(self.book_orders[symbol]["sell"]) > 1:
+            order_id = self.book_orders[symbol]["sell"].pop(0)
+            match await do_async(
+                Ok(_)
+                for _ in await self.delete_api_v3_hf_margin_orders(
+                    order_id,
+                    data.data.symbol,
+                )
+                for _ in await self.post_api_v3_margin_repay(
+                    data={
+                        "currency": symbol,
+                        "size": float(data.data.size or 1),
+                        "isIsolated": False,
+                        "isHf": True,
+                    }
+                )
             ):
                 case Err(exc):
                     logger.exception(exc)
