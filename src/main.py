@@ -18,7 +18,7 @@ from typing import Any, Self
 from urllib.parse import urljoin
 from uuid import UUID, uuid4
 
-from aiohttp import ClientConnectorError, ClientSession
+from aiohttp import ClientConnectorError, ClientSession, ServerDisconnectedError
 from asyncpg import Pool, Record, create_pool
 from dacite import (
     ForwardReferenceError,
@@ -1044,7 +1044,7 @@ class KCN:
                 res = await response.read()  # bytes
                 logger.success(f"{response.status}:{method}:{url}")
                 return Ok(res)
-        except ClientConnectorError as exc:
+        except (ClientConnectorError, ServerDisconnectedError) as exc:
             logger.exception(exc)
             return Err(exc)
 
@@ -1866,8 +1866,16 @@ class KCN:
                 size=order_down.size,
             )
             for order_id in await self.post_api_v3_hf_margin_order(params_order_down)
-            for _ in self.save_buy_order_id(ticket, order_id.data.orderId)
         ):
+            case Ok(order_id):
+                if order_id.data:
+                    match do(
+                        Ok(_)
+                        for _ in self.save_buy_order_id(ticket, order_id.data.orderId)
+                    ):
+                        case Err(exc):
+                            logger.exception(exc)
+
             case Err(exc):
                 logger.exception(exc)
         return Ok(None)
@@ -1907,8 +1915,16 @@ class KCN:
                 size=order_up.size,
             )
             for order_id in await self.post_api_v3_hf_margin_order(params_order_up)
-            for _ in self.save_sell_order_id(ticket, order_id.data.orderId)
         ):
+            case Ok(order_id):
+                if order_id.data:
+                    match do(
+                        Ok(_)
+                        for _ in self.save_sell_order_id(ticket, order_id.data.orderId)
+                    ):
+                        case Err(exc):
+                            logger.exception(exc)
+
             case Err(exc):
                 logger.exception(exc)
         return Ok(None)
@@ -2260,7 +2276,7 @@ class KCN:
         for assed in data.data.accounts:
             if assed.liability != "0":
                 if assed.currency in self.book:
-                    base_size = self.BASE_KEEP
+                    base_size = Decimal("1.0")
                     while True:
                         match await do_async(
                             Ok(_)
@@ -2294,7 +2310,7 @@ class KCN:
                                 break
                         base_size *= 2
                 elif assed.currency == "USDT":
-                    base_size = self.BASE_KEEP
+                    base_size = Decimal("1.0")
                     while True:
                         match await do_async(
                             Ok(_)
