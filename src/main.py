@@ -1450,6 +1450,29 @@ class KCN:
                     ):
                         case Err(exc):
                             logger.exception(exc)
+                elif data.side == "buy":
+                    # check exist liabilities
+                    match await do_async(
+                        Ok(api_v3_margin_accounts)
+                        for api_v3_margin_accounts in await self.get_api_v3_margin_accounts(
+                            params={
+                                "quoteCurrency": "USDT",
+                            },
+                        )
+                    ):
+                        case Ok(api_v3_margin_accounts):
+                            for account in api_v3_margin_accounts.data.accounts:
+                                if symbol_name == account.currency:
+                                    match await do_async(
+                                        Ok(_)
+                                        for _ in await self.make_buy_margin_order(
+                                            symbol_name
+                                        )
+                                    ):
+                                        case Err(exc):
+                                            logger.exception(exc)
+                        case Err(exc):
+                            logger.exception(exc)
             case Err(exc):
                 logger.exception(exc)
         return Ok(None)
@@ -1904,7 +1927,7 @@ class KCN:
         self: Self,
         ticket: str,
     ) -> Result[None, Exception]:
-        """."""
+        """Ticket - BTC."""
         match await do_async(
             Ok(order_id)
             for order_up in self.calc_up(ticket)
@@ -1931,12 +1954,28 @@ class KCN:
 
     async def start_up_orders(self: Self) -> Result[None, Exception]:
         """Make init orders."""
-        await asyncio.sleep(5)
+        match await do_async(
+            Ok(margin_account)
+            for _ in await self.sleep_to(sleep_on=5)
+            for margin_account in await self.get_api_v3_margin_accounts(
+                params={
+                    "quoteCurrency": "USDT",
+                },
+            )
+        ):
+            case Ok(margin_account):
+                for account in margin_account.data.accounts:
+                    if account.currency in self.book:
+                        if account.liability != "0":
+                            match await self.make_buy_margin_order(account.currency):
+                                case Err(exc):
+                                    logger.exception(exc)
 
-        for ticket in self.book:
-            match await self.make_sell_margin_order(ticket):
-                case Err(exc):
-                    logger.exception(exc)
+                        match await self.make_sell_margin_order(account.currency):
+                            case Err(exc):
+                                logger.exception(exc)
+            case Err(exc):
+                logger.exception(exc)
 
         return Ok(None)
 
