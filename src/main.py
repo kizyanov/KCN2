@@ -2421,50 +2421,48 @@ class KCN:
                     logger.exception(exc)
         return Ok(None)
 
-    async def close_redundant_orders(
-        self: Self,
-        symbol: str,
-    ) -> Result[None, Exception]:
+    async def close_redundant_orders(self: Self) -> Result[None, Exception]:
         """Close redundant orders."""
-        match await do_async(
-            Ok(active_orders)
-            for active_orders in await self.get_api_v3_hf_margin_orders_active(
-                params={
-                    "symbol": symbol,
-                    "tradeType": "MARGIN_TRADE",
-                }
-            )
-        ):
-            case Ok(active_orders):
-                if active_orders.data:
-                    for orde in active_orders.data:
-                        logger.info(
-                            f"{orde.symbol}:{orde.side}:{orde.size}:{orde.price}"
-                        )
-                    for order in sorted(
-                        [order for order in active_orders.data if order.side == "sell"],
-                        key=lambda x: Decimal(x.price),
-                    )[1:]:
-                        match await do_async(
-                            Ok(_)
-                            for _ in await self.delete_api_v3_hf_margin_orders(
-                                order.id,
-                                order.symbol,
-                            )
-                            for _ in await self.post_api_v3_margin_repay(
-                                data={
-                                    "currency": order.symbol,
-                                    "size": float(order.size),
-                                    "isIsolated": False,
-                                    "isHf": True,
-                                }
-                            )
-                        ):
-                            case Err(exc):
-                                logger.exception(exc)
+        for symbol in self.book:
+            match await do_async(
+                Ok(active_orders)
+                for active_orders in await self.get_api_v3_hf_margin_orders_active(
+                    params={
+                        "symbol": f"{symbol}-USDT",
+                        "tradeType": "MARGIN_TRADE",
+                    }
+                )
+            ):
+                case Ok(active_orders):
+                    if active_orders.data:
+                        for orde in active_orders.data:
+                            ss = orde.symbol.replace("-USDT")
+                            if (
+                                ss in self.book_orders
+                                and orde.id not in self.book_orders[ss][orde.side]
+                            ):
+                                match await do_async(
+                                    Ok(_)
+                                    for _ in await self.delete_api_v3_hf_margin_orders(
+                                        orde.id,
+                                        orde.symbol,
+                                    )
+                                ):
+                                    case Err(exc):
+                                        logger.exception(exc)
+                            else:
+                                match await do_async(
+                                    Ok(_)
+                                    for _ in await self.delete_api_v3_hf_margin_orders(
+                                        orde.id,
+                                        orde.symbol,
+                                    )
+                                ):
+                                    case Err(exc):
+                                        logger.exception(exc)
 
-            case Err(exc):
-                logger.exception(exc)
+                case Err(exc):
+                    logger.exception(exc)
         return Ok(None)
 
     async def infinity_task(self: Self) -> Result[None, Exception]:
