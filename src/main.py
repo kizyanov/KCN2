@@ -2423,46 +2423,48 @@ class KCN:
 
     async def close_redundant_orders(self: Self) -> Result[None, Exception]:
         """Close redundant orders."""
-        for symbol in self.book:
-            match await do_async(
-                Ok(active_orders)
-                for active_orders in await self.get_api_v3_hf_margin_orders_active(
-                    params={
-                        "symbol": f"{symbol}-USDT",
-                        "tradeType": "MARGIN_TRADE",
-                    }
-                )
-            ):
-                case Ok(active_orders):
-                    if active_orders.data:
-                        for orde in active_orders.data:
-                            ss = orde.symbol.replace("-USDT")
-                            if (
-                                ss in self.book_orders
-                                and orde.id not in self.book_orders[ss][orde.side]
-                            ):
-                                match await do_async(
-                                    Ok(_)
-                                    for _ in await self.delete_api_v3_hf_margin_orders(
-                                        orde.id,
-                                        orde.symbol,
-                                    )
+        while True:
+            for symbol in self.book:
+                match await do_async(
+                    Ok(active_orders)
+                    for _ in await self.sleep_to(sleep_on=5)
+                    for active_orders in await self.get_api_v3_hf_margin_orders_active(
+                        params={
+                            "symbol": f"{symbol}-USDT",
+                            "tradeType": "MARGIN_TRADE",
+                        }
+                    )
+                ):
+                    case Ok(active_orders):
+                        if active_orders.data:
+                            for orde in active_orders.data:
+                                ss = orde.symbol.replace("-USDT")
+                                if (
+                                    ss in self.book_orders
+                                    and orde.id not in self.book_orders[ss][orde.side]
                                 ):
-                                    case Err(exc):
-                                        logger.exception(exc)
-                            else:
-                                match await do_async(
-                                    Ok(_)
-                                    for _ in await self.delete_api_v3_hf_margin_orders(
-                                        orde.id,
-                                        orde.symbol,
-                                    )
-                                ):
-                                    case Err(exc):
-                                        logger.exception(exc)
+                                    match await do_async(
+                                        Ok(_)
+                                        for _ in await self.delete_api_v3_hf_margin_orders(
+                                            orde.id,
+                                            orde.symbol,
+                                        )
+                                    ):
+                                        case Err(exc):
+                                            logger.exception(exc)
+                                else:
+                                    match await do_async(
+                                        Ok(_)
+                                        for _ in await self.delete_api_v3_hf_margin_orders(
+                                            orde.id,
+                                            orde.symbol,
+                                        )
+                                    ):
+                                        case Err(exc):
+                                            logger.exception(exc)
 
-                case Err(exc):
-                    logger.exception(exc)
+                    case Err(exc):
+                        logger.exception(exc)
         return Ok(None)
 
     async def infinity_task(self: Self) -> Result[None, Exception]:
@@ -2474,6 +2476,7 @@ class KCN:
                 tg.create_task(self.alertest()),
                 tg.create_task(self.start_up_orders()),
                 tg.create_task(self.repay_assets()),
+                tg.create_task(self.close_redundant_orders()),
             ]
 
         for task in tasks:
