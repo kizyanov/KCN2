@@ -2446,7 +2446,7 @@ class KCN:
                     case Ok(active_orders):
                         if active_orders.data:
                             for orde in active_orders.data:
-                                ss = orde.symbol.replace("-USDT")
+                                ss = orde.symbol.replace("-USDT", "")
                                 if (
                                     ss in self.book_orders
                                     and orde.id not in self.book_orders[ss][orde.side]
