@@ -1966,7 +1966,7 @@ class KCN:
             case Ok(margin_account):
                 for account in margin_account.data.accounts:
                     if account.currency in self.book:
-                        if account.liability != "0":
+                        if Decimal(account.liability) != 0:
                             match await self.make_buy_margin_order(account.currency):
                                 case Err(exc):
                                     logger.exception(exc)
