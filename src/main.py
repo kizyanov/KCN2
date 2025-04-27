@@ -1441,28 +1441,22 @@ class KCN:
             for _ in await self.insert_data_to_db(data)
         ):
             case Ok(symbol_name):
-                if data.side == "sell":
-                    # create new orders
-                    match await do_async(
-                        Ok(_)
-                        for _ in await self.make_buy_margin_order(symbol_name)
-                        for _ in await self.make_sell_margin_order(symbol_name)
-                    ):
-                        case Err(exc):
-                            logger.exception(exc)
-                elif data.side == "buy":
-                    # check exist liabilities
-                    match await do_async(
-                        Ok(api_v3_margin_accounts)
-                        for api_v3_margin_accounts in await self.get_api_v3_margin_accounts(
-                            params={
-                                "quoteCurrency": "USDT",
-                            },
-                        )
-                    ):
-                        case Ok(api_v3_margin_accounts):
-                            for account in api_v3_margin_accounts.data.accounts:
-                                if symbol_name == account.currency:
+                match await do_async(
+                    Ok(api_v3_margin_accounts)
+                    for api_v3_margin_accounts in await self.get_api_v3_margin_accounts(
+                        params={
+                            "quoteCurrency": "USDT",
+                        },
+                    )
+                ):
+                    case Ok(api_v3_margin_accounts):
+                        for account in api_v3_margin_accounts.data.accounts:
+                            if symbol_name == account.currency:
+                                if (
+                                    data.side == "buy"
+                                    and Decimal(account.liability) != 0
+                                ):
+                                    # check exist liabilities
                                     match await do_async(
                                         Ok(_)
                                         for _ in await self.make_buy_margin_order(
@@ -1471,8 +1465,22 @@ class KCN:
                                     ):
                                         case Err(exc):
                                             logger.exception(exc)
-                        case Err(exc):
-                            logger.exception(exc)
+                                elif data.side == "sell":
+                                    # create new orders
+                                    match await do_async(
+                                        Ok(_)
+                                        for _ in await self.make_buy_margin_order(
+                                            symbol_name
+                                        )
+                                        for _ in await self.make_sell_margin_order(
+                                            symbol_name
+                                        )
+                                    ):
+                                        case Err(exc):
+                                            logger.exception(exc)
+                    case Err(exc):
+                        logger.exception(exc)
+
             case Err(exc):
                 logger.exception(exc)
         return Ok(None)
