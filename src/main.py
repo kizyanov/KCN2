@@ -1520,6 +1520,9 @@ class KCN:
                 MarketCandle.Res,
                 value,
             )
+            for _ in await self.sleep_to(
+                sleep_on=0.1
+            )  # sleep for wait 100 ms (super fall was kill funds)
             for _ in await self.event_candll(data_dataclass)
         ):
             case Err(exc):
@@ -1533,7 +1536,7 @@ class KCN:
         """Infinity loop for listen candle msgs."""
         logger.warning("listen_candle_event")
         async for msg in ws_inst:
-            asyncio.create_task(self.processing_ws_candle(msg))
+            await self.processing_ws_candle(msg)
 
         return Ok(None)
 
