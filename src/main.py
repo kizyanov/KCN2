@@ -1452,10 +1452,7 @@ class KCN:
                     case Ok(api_v3_margin_accounts):
                         for account in api_v3_margin_accounts.data.accounts:
                             if symbol_name == account.currency:
-                                if (
-                                    data.side == "buy"
-                                    and Decimal(account.liability) != 0
-                                ):
+                                if Decimal(account.liability) != 0:
                                     # check exist liabilities
                                     match await do_async(
                                         Ok(_)
@@ -1465,13 +1462,11 @@ class KCN:
                                     ):
                                         case Err(exc):
                                             logger.exception(exc)
-                                elif data.side == "sell":
+
+                                if data.side == "sell":
                                     # create new orders
                                     match await do_async(
                                         Ok(_)
-                                        for _ in await self.make_buy_margin_order(
-                                            symbol_name
-                                        )
                                         for _ in await self.make_sell_margin_order(
                                             symbol_name
                                         )
@@ -1525,6 +1520,9 @@ class KCN:
                 MarketCandle.Res,
                 value,
             )
+            for _ in await self.sleep_to(
+                sleep_on=0.1
+            )  # sleep for wait 100 ms (super fall was kill funds)
             for _ in await self.event_candll(data_dataclass)
         ):
             case Err(exc):
@@ -1538,7 +1536,7 @@ class KCN:
         """Infinity loop for listen candle msgs."""
         logger.warning("listen_candle_event")
         async for msg in ws_inst:
-            asyncio.create_task(self.processing_ws_candle(msg))
+            await self.processing_ws_candle(msg)
 
         return Ok(None)
 
