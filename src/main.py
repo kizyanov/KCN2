@@ -1506,6 +1506,9 @@ class KCN:
                     data.data.price
                 ):
                     self.book[symbol].last_price = Decimal(data.data.price)
+                    await asyncio.sleep(
+                        0.1
+                    )  # sleep for wait 100 ms (super fall was kill funds)
                     await self.make_sell_margin_order(symbol)
         return Ok(None)
 
@@ -1520,9 +1523,6 @@ class KCN:
                 MarketCandle.Res,
                 value,
             )
-            for _ in await self.sleep_to(
-                sleep_on=0.1
-            )  # sleep for wait 100 ms (super fall was kill funds)
             for _ in await self.event_candll(data_dataclass)
         ):
             case Err(exc):
