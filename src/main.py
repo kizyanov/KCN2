@@ -2328,7 +2328,7 @@ class KCN:
                             for _ in await self.sleep_to(sleep_on=0.5)
                             for last_price_quantize in self.quantize_minus(
                                 self.book[assed.currency].last_price,
-                                self.book[assed.currency].baseincrement,
+                                self.book[assed.currency].priceincrement,
                             )
                             for raw_size in self.divide(
                                 base_size,
