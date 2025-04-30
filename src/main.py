@@ -2477,21 +2477,18 @@ class KCN:
         await asyncio.sleep(sleep_on)
         return Ok(None)
 
-    async def repay(
-        self: Self,
-        data: ApiV3MarginAccountsGET.Res,
-    ) -> Result[None, Exception]:
-        """."""
-        for assed in data.data.accounts:
-            if assed.currency in self.book:
-                base_size = Decimal("2.0")
+    async def repay_assets(self: Self) -> Result[None, Exception]:
+        """Repay all assets."""
+        while True:
+            for asset in self.book:
+                base_size = Decimal("1.0")
                 while True:
                     match await do_async(
                         Ok(_)
                         for _ in await self.sleep_to(sleep_on=0.1)
                         for last_price_quantize in self.quantize_minus(
-                            self.book[assed.currency].last_price,
-                            self.book[assed.currency].priceincrement,
+                            self.book[asset].last_price,
+                            self.book[asset].priceincrement,
                         )
                         for raw_size in self.divide(
                             base_size,
@@ -2499,60 +2496,40 @@ class KCN:
                         )
                         for size in self.quantize_plus(
                             raw_size,
-                            self.book[assed.currency].baseincrement,
+                            self.book[asset].baseincrement,
                         )
                         for _ in await self.post_api_v3_margin_repay(
                             data={
-                                "currency": assed.currency,
+                                "currency": asset,
                                 "size": float(size),
                                 "isIsolated": False,
                                 "isHf": True,
                             }
                         )
-                        for _ in self.logger_success(
-                            f"Repay:{assed.currency} on {size}"
-                        )
+                        for _ in self.logger_success(f"Repay:{asset} on {size}")
                     ):
                         case Err(_):
                             break
                     base_size *= 2
-            elif assed.currency == "USDT":
-                base_size = Decimal("2.0")
-                while True:
-                    match await do_async(
-                        Ok(_)
-                        for _ in await self.sleep_to(sleep_on=0.1)
-                        for _ in await self.post_api_v3_margin_repay(
-                            data={
-                                "currency": assed.currency,
-                                "size": float(base_size),
-                                "isIsolated": False,
-                                "isHf": True,
-                            }
-                        )
-                        for _ in self.logger_success(
-                            f"Repay:{assed.currency} on {base_size}"
-                        )
-                    ):
-                        case Err(_):
-                            break
-                    base_size *= 2
-        return Ok(None)
+            base_size = Decimal("1.0")
+            while True:
+                match await do_async(
+                    Ok(_)
+                    for _ in await self.sleep_to(sleep_on=0.1)
+                    for _ in await self.post_api_v3_margin_repay(
+                        data={
+                            "currency": "USDT",
+                            "size": float(base_size),
+                            "isIsolated": False,
+                            "isHf": True,
+                        }
+                    )
+                    for _ in self.logger_success(f"Repay:'USDT' on {base_size}")
+                ):
+                    case Err(_):
+                        break
+                base_size *= 2
 
-    async def repay_assets(self: Self) -> Result[None, Exception]:
-        """Repay all assets."""
-        while True:
-            match await do_async(
-                Ok(_)
-                for margin_account in await self.get_api_v3_margin_accounts(
-                    params={
-                        "quoteCurrency": "USDT",
-                    },
-                )
-                for _ in await self.repay(margin_account)
-            ):
-                case Err(exc):
-                    logger.exception(exc)
         return Ok(None)
 
     async def close_older_sell_order(
@@ -2635,6 +2612,7 @@ class KCN:
         async with asyncio.TaskGroup() as tg:
             tasks = [
                 tg.create_task(self.position()),
+                tg.create_task(self.repay_assets()),
             ]
 
         for task in tasks:
