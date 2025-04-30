@@ -1542,6 +1542,15 @@ class KCN:
         data: CrossMarginPosition.Res,
     ) -> Result[None, Exception]:
         """."""
+        for symbol in self.book:
+            if symbol in data.data.debtList and self.book[symbol].liability != Decimal(
+                data.data.debtList[symbol]
+            ):
+                self.book[symbol].liability = Decimal(data.data.debtList[symbol])
+                logger.info(
+                    f"Update liab:{symbol} from {self.book[symbol].liability} to {data.data.debtList[symbol]}"
+                )
+
         logger.info(data)
         return Ok(None)
 
