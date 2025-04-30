@@ -239,6 +239,26 @@ class ApiV3MarginRepayPOST:
 
 
 @dataclass(frozen=True)
+class CrossMarginPosition:
+    """."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """."""
+
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            debtRatio: float
+            assetList: dict[str, dict[str, str]]
+            debtList: dict[str, str]
+
+        subject: str
+        data: Data
+
+
+@dataclass(frozen=True)
 class OrderChangeV2:
     """."""
 
@@ -1376,13 +1396,13 @@ class KCN:
         build inside book for tickets
         book = {
             "ADA": {
-                "last": Decimal,
+                "last_price": Decimal,
                 "baseincrement": Decimal,
                 "priceincrement": Decimal,
                 "borrow": Decimal,
             },
             "JUP": {
-                "last": Decimal,
+                "last_price": Decimal,
                 "baseincrement": Decimal,
                 "priceincrement": Decimal,
                 "borrow": Decimal,
@@ -1402,6 +1422,8 @@ class KCN:
         self.book: dict[str, Book] = {
             ticket: Book(
                 last_price=Decimal("0"),
+                liability=Decimal("0"),
+                total=Decimal("0"),
                 baseincrement=Decimal("0"),
                 priceincrement=Decimal("0"),
             )
@@ -1513,6 +1535,14 @@ class KCN:
                     asyncio.create_task(self.order_filled(data.data))
         return Ok(None)
 
+    async def event_position(
+        self: Self,
+        data: CrossMarginPosition.Res,
+    ) -> Result[None, Exception]:
+        """."""
+        logger.info(data)
+        return Ok(None)
+
     async def event_candll(
         self: Self,
         data: MarketCandle.Res,
@@ -1582,7 +1612,11 @@ class KCN:
         match await do_async(
             Ok(None)
             for value in self.parse_bytes_to_dict(msg)
-            for _ in self.logger_info(value)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                CrossMarginPosition.Res,
+                value,
+            )
+            for _ in await self.event_position(data_dataclass)
         ):
             case Err(exc):
                 return Err(exc)
