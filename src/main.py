@@ -2481,36 +2481,37 @@ class KCN:
         """Repay all assets."""
         while True:
             for asset in self.book:
-                base_size = Decimal("1.0")
-                while True:
-                    match await do_async(
-                        Ok(_)
-                        for _ in await self.sleep_to(sleep_on=0.1)
-                        for last_price_quantize in self.quantize_minus(
-                            self.book[asset].last_price,
-                            self.book[asset].priceincrement,
-                        )
-                        for raw_size in self.divide(
-                            base_size,
-                            last_price_quantize,
-                        )
-                        for size in self.quantize_plus(
-                            raw_size,
-                            self.book[asset].baseincrement,
-                        )
-                        for _ in await self.post_api_v3_margin_repay(
-                            data={
-                                "currency": asset,
-                                "size": float(size),
-                                "isIsolated": False,
-                                "isHf": True,
-                            }
-                        )
-                        for _ in self.logger_success(f"Repay:{asset} on {size}")
-                    ):
-                        case Err(_):
-                            break
-                    base_size *= 2
+                if self.book[asset].liability != 0:
+                    base_size = Decimal("1.0")
+                    while True:
+                        match await do_async(
+                            Ok(_)
+                            for _ in await self.sleep_to(sleep_on=0.1)
+                            for last_price_quantize in self.quantize_minus(
+                                self.book[asset].last_price,
+                                self.book[asset].priceincrement,
+                            )
+                            for raw_size in self.divide(
+                                base_size,
+                                last_price_quantize,
+                            )
+                            for size in self.quantize_plus(
+                                raw_size,
+                                self.book[asset].baseincrement,
+                            )
+                            for _ in await self.post_api_v3_margin_repay(
+                                data={
+                                    "currency": asset,
+                                    "size": float(size),
+                                    "isIsolated": False,
+                                    "isHf": True,
+                                }
+                            )
+                            for _ in self.logger_success(f"Repay:{asset} on {size}")
+                        ):
+                            case Err(_):
+                                break
+                        base_size *= 2
             base_size = Decimal("1.0")
             while True:
                 match await do_async(
