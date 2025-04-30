@@ -51,7 +51,7 @@ class Book:
 
     last_price: Decimal
     liability: Decimal
-    total: Decimal
+    available: Decimal
     baseincrement: Decimal
     priceincrement: Decimal
 
@@ -1425,7 +1425,7 @@ class KCN:
             ticket: Book(
                 last_price=Decimal("0"),
                 liability=Decimal("0"),
-                total=Decimal("0"),
+                available=Decimal("0"),
                 baseincrement=Decimal("0"),
                 priceincrement=Decimal("0"),
             )
@@ -1550,15 +1550,16 @@ class KCN:
                     f"Update liability:{symbol} from {self.book[symbol].liability} to {data.data.debtList[symbol]}"
                 )
                 self.book[symbol].liability = Decimal(data.data.debtList[symbol])
-            if symbol in data.data.assetList and self.book[symbol].total != Decimal(
-                data.data.assetList[symbol]["total"]
+            if symbol in data.data.assetList and self.book[symbol].available != Decimal(
+                data.data.assetList[symbol]["available"]
             ):
                 logger.info(
-                    f"Update total:{symbol} from {self.book[symbol].total} to {data.data.assetList[symbol]['total']}"
+                    f"Update available:{symbol} from {self.book[symbol].available} to {data.data.assetList[symbol]['available']}"
                 )
-                self.book[symbol].total = Decimal(data.data.assetList[symbol]["total"])
+                self.book[symbol].available = Decimal(
+                    data.data.assetList[symbol]["available"]
+                )
 
-        logger.info(self.book)
         return Ok(None)
 
     async def event_candll(
