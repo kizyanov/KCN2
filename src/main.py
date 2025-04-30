@@ -1823,7 +1823,7 @@ class KCN:
         raw_candle: tuple[str, ...],
     ) -> Result[str, Exception]:
         """."""
-        return Ok(",".join([f"{symbol}-USDT_1hour" for symbol in raw_candle]))
+        return Ok(",".join([f"{symbol}_1hour" for symbol in raw_candle]))
 
     def get_msg_for_subscribe_candle(
         self: Self,
