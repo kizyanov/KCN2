@@ -1585,11 +1585,7 @@ class KCN:
         match await do_async(
             Ok(None)
             for value in self.parse_bytes_to_dict(msg)
-            for data_dataclass in self.convert_to_dataclass_from_dict(
-                MarketCandle.Res,
-                value,
-            )
-            for _ in await self.event_candll(data_dataclass)
+            for _ in self.logger_info(value)
         ):
             case Err(exc):
                 return Err(exc)
@@ -1827,7 +1823,7 @@ class KCN:
         raw_candle: tuple[str, ...],
     ) -> Result[str, Exception]:
         """."""
-        return Ok(",".join(raw_candle))
+        return Ok(",".join([f"{symbol}-USDT_1hour" for symbol in raw_candle]))
 
     def get_msg_for_subscribe_candle(
         self: Self,
@@ -1840,7 +1836,7 @@ class KCN:
                 {
                     "id": uuid_str,
                     "type": "subscribe",
-                    "topic": f"/market/match:{candles}",
+                    "topic": f"/market/candles:{candles}",
                     "privateChannel": False,
                     "response": False,
                     "tunnelId": tunnelid,
@@ -2613,6 +2609,7 @@ class KCN:
         async with asyncio.TaskGroup() as tg:
             tasks = [
                 tg.create_task(self.position()),
+                tg.create_task(self.candle()),
                 tg.create_task(self.repay_assets()),
             ]
 
