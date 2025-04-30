@@ -2321,7 +2321,6 @@ class KCN:
                 while True:
                     match await do_async(
                         Ok(_)
-                        for _ in await self.sleep_to(sleep_on=0.2)
                         for last_price_quantize in self.quantize_minus(
                             self.book[assed.currency].last_price,
                             self.book[assed.currency].priceincrement,
@@ -2354,7 +2353,6 @@ class KCN:
                 while True:
                     match await do_async(
                         Ok(_)
-                        for _ in await self.sleep_to(sleep_on=0.2)
                         for _ in await self.post_api_v3_margin_repay(
                             data={
                                 "currency": assed.currency,
