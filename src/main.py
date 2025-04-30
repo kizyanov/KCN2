@@ -1156,6 +1156,26 @@ class KCN:
 
         return Ok(None)
 
+    async def runtime_position_ws(
+        self: Self,
+        ws: connect,
+        subsribe_msg: dict[str, str | bool],
+    ) -> Result[None, Exception]:
+        """Runtime listen websocket all time."""
+        async with ws as ws_inst:
+            match await do_async(
+                Ok(None)
+                # get welcome msg
+                for _ in await self.welcome_processing_websocket(ws_inst)
+                # subscribe to topic
+                for _ in await self.ack_processing_websocket(ws_inst, subsribe_msg)
+                for _ in await self.listen_position_event(ws_inst)
+            ):
+                case Err(exc):
+                    return Err(exc)
+
+        return Ok(None)
+
     def get_tunnel(
         self: Self,
         tunnelid: str,
@@ -1554,6 +1574,20 @@ class KCN:
                 return Err(exc)
         return Ok(None)
 
+    async def processing_ws_position(
+        self: Self,
+        msg: str | bytes,
+    ) -> Result[None, Exception]:
+        """."""
+        match await do_async(
+            Ok(None)
+            for value in self.parse_bytes_to_dict(msg)
+            for _ in self.logger_info(value)
+        ):
+            case Err(exc):
+                return Err(exc)
+        return Ok(None)
+
     async def listen_matching_event(
         self: Self,
         ws_inst: ClientConnection,
@@ -1561,6 +1595,16 @@ class KCN:
         """Infinity loop for listen candle msgs."""
         async for msg in ws_inst:
             asyncio.create_task(self.processing_ws_matching(msg))
+
+        return Ok(None)
+
+    async def listen_position_event(
+        self: Self,
+        ws_inst: ClientConnection,
+    ) -> Result[None, Exception]:
+        """Infinity loop for listen position msgs."""
+        async for msg in ws_inst:
+            asyncio.create_task(self.processing_ws_position(msg))
 
         return Ok(None)
 
@@ -1707,6 +1751,24 @@ class KCN:
             for uuid_str in self.format_to_str_uuid(default_uuid4)
         )
 
+    def get_msg_for_subscribe_position(
+        self: Self,
+    ) -> Result[dict[str, str | bool], Exception]:
+        """Get msg for subscribe to position kucoin."""
+        return do(
+            Ok(
+                {
+                    "id": uuid_str,
+                    "type": "subscribe",
+                    "topic": "/margin/position",
+                    "privateChannel": True,
+                    "response": True,
+                },
+            )
+            for default_uuid4 in self.get_default_uuid4()
+            for uuid_str in self.format_to_str_uuid(default_uuid4)
+        )
+
     def get_candles_for_kline(
         self: Self,
         raw_candle: tuple[str, ...],
@@ -1785,6 +1847,58 @@ class KCN:
             except Exception as exc:  # noqa: BLE001
                 logger.exception(exc)
                 await self.send_telegram_msg("Unexpected error in matching: see logs")
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
+
+    async def position(self: Self) -> Result[None, Exception]:
+        """Monitoring of repay position.
+
+        Start listen websocket
+        """
+        reconnect_delay = 1
+        max_reconnect_delay = 60
+        while True:
+            try:
+                logger.info("position start")
+                match await do_async(
+                    Ok(None)
+                    for bullet_private in await self.get_api_v1_bullet_private()
+                    for url_ws in self.get_url_for_websocket(bullet_private)
+                    for ping_interval in self.get_ping_interval_for_websocket(
+                        bullet_private,
+                    )
+                    for ping_timeout in self.get_ping_timeout_for_websocket(
+                        bullet_private,
+                    )
+                    for ws in self.get_websocket(url_ws, ping_interval, ping_timeout)
+                    for msg_subscribe_position in self.get_msg_for_subscribe_position()
+                    for _ in await self.runtime_position_ws(
+                        ws,
+                        msg_subscribe_position,
+                    )
+                ):
+                    case Err(exc):
+                        logger.exception(exc)
+                        await self.send_telegram_msg(
+                            "Drop position websocket: see logs",
+                        )
+            except (
+                ConnectionResetError,
+                websockets_exceptions.ConnectionClosed,
+                TimeoutError,
+                websockets_exceptions.WebSocketException,
+                socket.gaierror,
+                ConnectionRefusedError,
+                SSLError,
+                OSError,
+            ) as exc:
+                logger.exception(exc)
+                await self.send_telegram_msg("Drop position websocket: see logs")
+                await asyncio.sleep(reconnect_delay)
+                reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(exc)
+                await self.send_telegram_msg("Unexpected error in position: see logs")
                 await asyncio.sleep(reconnect_delay)
                 reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
 
@@ -2467,12 +2581,13 @@ class KCN:
         """Infinity run tasks."""
         async with asyncio.TaskGroup() as tg:
             tasks = [
-                tg.create_task(self.matching()),
-                tg.create_task(self.candle()),
-                tg.create_task(self.alertest()),
-                tg.create_task(self.start_up_orders()),
-                tg.create_task(self.repay_assets()),
-                tg.create_task(self.close_redundant_orders()),
+                tg.create_task(self.position()),
+                # tg.create_task(self.matching()),
+                # tg.create_task(self.candle()),
+                # tg.create_task(self.alertest()),
+                # tg.create_task(self.start_up_orders()),
+                # tg.create_task(self.repay_assets()),
+                # tg.create_task(self.close_redundant_orders()),
             ]
 
         for task in tasks:
