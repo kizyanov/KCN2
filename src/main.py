@@ -50,6 +50,8 @@ class Book:
     """Store data for each token."""
 
     last_price: Decimal
+    liability: Decimal
+    total: Decimal
     baseincrement: Decimal
     priceincrement: Decimal
 
@@ -2616,12 +2618,6 @@ class KCN:
         async with asyncio.TaskGroup() as tg:
             tasks = [
                 tg.create_task(self.position()),
-                # tg.create_task(self.matching()),
-                # tg.create_task(self.candle()),
-                # tg.create_task(self.alertest()),
-                # tg.create_task(self.start_up_orders()),
-                # tg.create_task(self.repay_assets()),
-                # tg.create_task(self.close_redundant_orders()),
             ]
 
         for task in tasks:
