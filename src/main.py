@@ -1546,12 +1546,19 @@ class KCN:
             if symbol in data.data.debtList and self.book[symbol].liability != Decimal(
                 data.data.debtList[symbol]
             ):
-                self.book[symbol].liability = Decimal(data.data.debtList[symbol])
                 logger.info(
-                    f"Update liab:{symbol} from {self.book[symbol].liability} to {data.data.debtList[symbol]}"
+                    f"Update liability:{symbol} from {self.book[symbol].liability} to {data.data.debtList[symbol]}"
                 )
+                self.book[symbol].liability = Decimal(data.data.debtList[symbol])
+            if symbol in data.data.assetList and self.book[symbol].total != Decimal(
+                data.data.assetList[symbol]["total"]
+            ):
+                logger.info(
+                    f"Update total:{symbol} from {self.book[symbol].total} to {data.data.assetList[symbol]['total']}"
+                )
+                self.book[symbol].total = Decimal(data.data.assetList[symbol]["total"])
 
-        logger.info(data)
+        logger.info(self.book)
         return Ok(None)
 
     async def event_candll(
