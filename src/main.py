@@ -2319,63 +2319,60 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         for assed in data.data.accounts:
-            if assed.liability != "0":
-                if assed.currency in self.book:
-                    base_size = Decimal("1.0")
-                    while True:
-                        match await do_async(
-                            Ok(_)
-                            for _ in await self.sleep_to(sleep_on=0.5)
-                            for last_price_quantize in self.quantize_minus(
-                                self.book[assed.currency].last_price,
-                                self.book[assed.currency].priceincrement,
-                            )
-                            for raw_size in self.divide(
-                                base_size,
-                                last_price_quantize,
-                            )
-                            for size in self.quantize_plus(
-                                raw_size,
-                                self.book[assed.currency].baseincrement,
-                            )
-                            for _ in await self.post_api_v3_margin_repay(
-                                data={
-                                    "currency": assed.currency,
-                                    "size": float(size),
-                                    "isIsolated": False,
-                                    "isHf": True,
-                                }
-                            )
-                            for _ in self.logger_success(
-                                f"Repay:{assed.currency} on {size}"
-                            )
-                        ):
-                            case Err(exc):
-                                logger.exception(exc)
-                                break
-                        base_size *= 2
-                elif assed.currency == "USDT":
-                    base_size = Decimal("1.0")
-                    while True:
-                        match await do_async(
-                            Ok(_)
-                            for _ in await self.sleep_to(sleep_on=0.5)
-                            for _ in await self.post_api_v3_margin_repay(
-                                data={
-                                    "currency": assed.currency,
-                                    "size": float(base_size),
-                                    "isIsolated": False,
-                                    "isHf": True,
-                                }
-                            )
-                            for _ in self.logger_success(
-                                f"Repay:{assed.currency} on {base_size}"
-                            )
-                        ):
-                            case Err(exc):
-                                logger.exception(exc)
-                                break
-                        base_size *= 2
+            if assed.currency in self.book:
+                base_size = Decimal("2.0")
+                while True:
+                    match await do_async(
+                        Ok(_)
+                        for _ in await self.sleep_to(sleep_on=0.4)
+                        for last_price_quantize in self.quantize_minus(
+                            self.book[assed.currency].last_price,
+                            self.book[assed.currency].priceincrement,
+                        )
+                        for raw_size in self.divide(
+                            base_size,
+                            last_price_quantize,
+                        )
+                        for size in self.quantize_plus(
+                            raw_size,
+                            self.book[assed.currency].baseincrement,
+                        )
+                        for _ in await self.post_api_v3_margin_repay(
+                            data={
+                                "currency": assed.currency,
+                                "size": float(size),
+                                "isIsolated": False,
+                                "isHf": True,
+                            }
+                        )
+                        for _ in self.logger_success(
+                            f"Repay:{assed.currency} on {size}"
+                        )
+                    ):
+                        case Err(_):
+                            break
+                    base_size *= 2
+            elif assed.currency == "USDT":
+                base_size = Decimal("2.0")
+                while True:
+                    match await do_async(
+                        Ok(_)
+                        for _ in await self.sleep_to(sleep_on=0.4)
+                        for _ in await self.post_api_v3_margin_repay(
+                            data={
+                                "currency": assed.currency,
+                                "size": float(base_size),
+                                "isIsolated": False,
+                                "isHf": True,
+                            }
+                        )
+                        for _ in self.logger_success(
+                            f"Repay:{assed.currency} on {base_size}"
+                        )
+                    ):
+                        case Err(_):
+                            break
+                    base_size *= 2
         return Ok(None)
 
     async def repay_assets(self: Self) -> Result[None, Exception]:
