@@ -2395,7 +2395,10 @@ class KCN:
         """."""
         symbol = data.data.symbol.replace("-USDT", "")
         if data.data.side == "sell" and symbol in self.book_orders:
-            for close_order in self.book_orders[symbol]["sell"][:-1]:
+            orders_for_close = self.book_orders[symbol]["sell"][:-1]
+            self.book_orders[symbol]["sell"][:-1] = []
+
+            for close_order in orders_for_close:
                 match await do_async(
                     Ok(_)
                     for _ in await self.delete_api_v3_hf_margin_orders(
