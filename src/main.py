@@ -2413,7 +2413,6 @@ class KCN:
                 ):
                     case Err(exc):
                         logger.exception(exc)
-                self.book_orders[symbol]["sell"].pop(0)
         return Ok(None)
 
     async def close_redundant_orders(self: Self) -> Result[None, Exception]:
