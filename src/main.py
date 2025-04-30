@@ -2394,28 +2394,25 @@ class KCN:
     ) -> Result[None, Exception]:
         """."""
         symbol = data.data.symbol.replace("-USDT", "")
-        if (
-            data.data.side == "sell"
-            and symbol in self.book_orders
-            and len(self.book_orders[symbol]["sell"]) > 1
-        ):
-            match await do_async(
-                Ok(_)
-                for _ in await self.delete_api_v3_hf_margin_orders(
-                    self.book_orders[symbol]["sell"].pop(0),
-                    data.data.symbol,
-                )
-                for _ in await self.post_api_v3_margin_repay(
-                    data={
-                        "currency": symbol,
-                        "size": float(data.data.size or 1),
-                        "isIsolated": False,
-                        "isHf": True,
-                    }
-                )
-            ):
-                case Err(exc):
-                    logger.exception(exc)
+        if data.data.side == "sell" and symbol in self.book_orders:
+            for close_order in self.book_orders[symbol]["sell"][:-1]:
+                match await do_async(
+                    Ok(_)
+                    for _ in await self.delete_api_v3_hf_margin_orders(
+                        close_order,
+                        data.data.symbol,
+                    )
+                    for _ in await self.post_api_v3_margin_repay(
+                        data={
+                            "currency": symbol,
+                            "size": float(data.data.size or 1),
+                            "isIsolated": False,
+                            "isHf": True,
+                        }
+                    )
+                ):
+                    case Err(exc):
+                        logger.exception(exc)
         return Ok(None)
 
     async def close_redundant_orders(self: Self) -> Result[None, Exception]:
