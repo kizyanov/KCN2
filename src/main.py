@@ -1506,9 +1506,6 @@ class KCN:
                     data.data.price
                 ):
                     self.book[symbol].last_price = Decimal(data.data.price)
-                    await asyncio.sleep(
-                        0.1
-                    )  # sleep for wait 100 ms (super fall was kill funds)
                     await self.make_sell_margin_order(symbol)
         return Ok(None)
 
@@ -1536,7 +1533,7 @@ class KCN:
         """Infinity loop for listen candle msgs."""
         logger.warning("listen_candle_event")
         async for msg in ws_inst:
-            await self.processing_ws_candle(msg)
+            asyncio.create_task(self.processing_ws_candle(msg))
 
         return Ok(None)
 
@@ -2324,7 +2321,7 @@ class KCN:
                 while True:
                     match await do_async(
                         Ok(_)
-                        for _ in await self.sleep_to(sleep_on=0.4)
+                        for _ in await self.sleep_to(sleep_on=0.2)
                         for last_price_quantize in self.quantize_minus(
                             self.book[assed.currency].last_price,
                             self.book[assed.currency].priceincrement,
@@ -2357,7 +2354,7 @@ class KCN:
                 while True:
                     match await do_async(
                         Ok(_)
-                        for _ in await self.sleep_to(sleep_on=0.4)
+                        for _ in await self.sleep_to(sleep_on=0.2)
                         for _ in await self.post_api_v3_margin_repay(
                             data={
                                 "currency": assed.currency,
@@ -2386,7 +2383,6 @@ class KCN:
                     },
                 )
                 for _ in await self.repay(margin_account)
-                for _ in await self.sleep_to(sleep_on=1)
             ):
                 case Err(exc):
                     logger.exception(exc)
@@ -2397,7 +2393,6 @@ class KCN:
         data: OrderChangeV2.Res,
     ) -> Result[None, Exception]:
         """."""
-        await asyncio.sleep(1)  # 1s delay
         symbol = data.data.symbol.replace("-USDT", "")
         if (
             data.data.side == "sell"
@@ -2410,7 +2405,6 @@ class KCN:
                     self.book_orders[symbol]["sell"].pop(0),
                     data.data.symbol,
                 )
-                for _ in await self.sleep_to(sleep_on=1)
                 for _ in await self.post_api_v3_margin_repay(
                     data={
                         "currency": symbol,
