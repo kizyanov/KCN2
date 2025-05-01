@@ -2343,24 +2343,30 @@ class KCN:
         return Ok(None)
 
     def fill_new_price(
-        self: Self, price_decimal: Decimal, symbol: str
+        self: Self,
+        price_decimal: Decimal,
+        symbol: str,
     ) -> Result[str, Exception]:
         """."""
         return do(
             Ok(_)
             # default price
+            for price_quantize in self.quantize_plus(
+                price_decimal,
+                self.book[symbol].priceincrement,
+            )
             for _ in self.fill_one_ticket_price(
                 symbol,
-                price_decimal,
+                price_quantize,
             )
             # up price
-            for up_price in self.plus_1_percent(price_decimal)
+            for up_price in self.plus_1_percent(price_quantize)
             for _ in self.fill_one_ticket_up_price(
                 symbol,
                 up_price,
             )
             # down price
-            for down_price in self.minus_1_percent(price_decimal)
+            for down_price in self.minus_1_percent(price_quantize)
             for _ in self.fill_one_ticket_down_price(
                 symbol,
                 down_price,
