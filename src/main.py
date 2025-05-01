@@ -284,6 +284,25 @@ class OrderChangeV2:
 
 
 @dataclass(frozen=True)
+class KLines:
+    """."""
+
+    @dataclass(frozen=True)
+    class Res:
+        """."""
+
+        @dataclass(frozen=True)
+        class Data:
+            """."""
+
+            symbol: str
+
+            candles: list[str]
+
+        data: Data
+
+
+@dataclass(frozen=True)
 class MarketCandle:
     """."""
 
@@ -1564,18 +1583,14 @@ class KCN:
 
     async def event_candll(
         self: Self,
-        data: MarketCandle.Res,
+        data: KLines.Res,
     ) -> Result[None, Exception]:
         """Event matching order."""
         match do(
             Ok(symbol) for symbol in self.replace_quote_in_symbol_name(data.data.symbol)
         ):
             case Ok(symbol):
-                if symbol in self.book and self.book[symbol].last_price > Decimal(
-                    data.data.price
-                ):
-                    self.book[symbol].last_price = Decimal(data.data.price)
-                    await self.make_sell_margin_order(symbol)
+                logger.info(f"{symbol}:{data.data.candles[2]}")
         return Ok(None)
 
     async def processing_ws_candle(
@@ -1586,6 +1601,11 @@ class KCN:
             Ok(None)
             for value in self.parse_bytes_to_dict(msg)
             for _ in self.logger_info(value)
+            for data_dataclass in self.convert_to_dataclass_from_dict(
+                KLines.Res,
+                value,
+            )
+            for _ in await self.event_candll(data_dataclass)
         ):
             case Err(exc):
                 return Err(exc)
