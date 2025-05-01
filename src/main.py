@@ -1596,13 +1596,30 @@ class KCN:
             case Ok(symbol):
                 close_price = Decimal(data.data.candles[2])
                 if symbol in self.book:
-                    if close_price < self.book[symbol].down_price:
+                    if (
+                        close_price < self.book[symbol].down_price
+                        or close_price > self.book[symbol].up_price
+                    ):
+                        # complete older buy order or complete older sell order
                         self.fill_new_price(close_price, symbol)
                         # need switch sell order to down
-                        logger.info(f"{symbol}:new down:{close_price}")
-                    if close_price > self.book[symbol].up_price:
-                        self.fill_new_price(close_price, symbol)
-                        logger.info(f"{symbol}:new up:{close_price}")
+
+                        # match await do_async(
+                        #     Ok(_) for _ in self.make_sell_margin_order(data.data.symbol)
+                        # ):
+                        #     case Err(exc):
+                        #         logger.exception(exc)
+
+                        # if self.book[symbol].liability != 0:
+                        #     match await do_async(
+                        #         Ok(_)
+                        #         for _ in self.make_buy_margin_order(data.data.symbol)
+                        #     ):
+                        #         case Err(exc):
+                        #             logger.exception(exc)
+
+                        logger.info(f"{symbol}:new price:{close_price}")
+
         return Ok(None)
 
     async def processing_ws_candle(
@@ -2153,7 +2170,8 @@ class KCN:
         """Make init orders."""
         match await do_async(
             Ok(margin_account)
-            for _ in await self.sleep_to(sleep_on=5)
+            # await sync position
+            for _ in await self.sleep_to(sleep_on=60)
             for margin_account in await self.get_api_v3_margin_accounts(
                 params={
                     "quoteCurrency": "USDT",
@@ -2163,11 +2181,6 @@ class KCN:
             case Ok(margin_account):
                 for account in margin_account.data.accounts:
                     if account.currency in self.book:
-                        if Decimal(account.liability) != 0:
-                            match await self.make_buy_margin_order(account.currency):
-                                case Err(exc):
-                                    logger.exception(exc)
-
                         match await self.make_sell_margin_order(account.currency):
                             case Err(exc):
                                 logger.exception(exc)
@@ -2403,9 +2416,8 @@ class KCN:
                     size=size_str,
                 ),
             )
-            for price in self.plus_1_percent(self.book[ticket].price)
             for price_quantize in self.quantize_plus(
-                price,
+                self.book[ticket].up_price,
                 self.book[ticket].priceincrement,
             )
             for price_str in self.decimal_to_str(price_quantize)
@@ -2433,9 +2445,8 @@ class KCN:
                     size=size_str,
                 ),
             )
-            for price in self.minus_1_percent(self.book[ticket].price)
             for price_quantize in self.quantize_minus(
-                price,
+                self.book[ticket].down_price,
                 self.book[ticket].priceincrement,
             )
             for price_str in self.decimal_to_str(price_quantize)
@@ -2687,6 +2698,7 @@ class KCN:
             tasks = [
                 tg.create_task(self.position()),
                 tg.create_task(self.candle()),
+                # tg.create_task(self.start_up_orders()),
                 # tg.create_task(self.repay_assets()),
             ]
 
