@@ -49,7 +49,9 @@ class AlertestToken:
 class Book:
     """Store data for each token."""
 
-    last_price: Decimal
+    up_price: Decimal
+    price: Decimal
+    down_price: Decimal
     liability: Decimal
     available: Decimal
     baseincrement: Decimal
@@ -1417,13 +1419,13 @@ class KCN:
         build inside book for tickets
         book = {
             "ADA": {
-                "last_price": Decimal,
+                "price": Decimal,
                 "baseincrement": Decimal,
                 "priceincrement": Decimal,
                 "borrow": Decimal,
             },
             "JUP": {
-                "last_price": Decimal,
+                "price": Decimal,
                 "baseincrement": Decimal,
                 "priceincrement": Decimal,
                 "borrow": Decimal,
@@ -1442,7 +1444,9 @@ class KCN:
         """
         self.book: dict[str, Book] = {
             ticket: Book(
-                last_price=Decimal("0"),
+                price=Decimal("0"),
+                up_price=Decimal("0"),
+                down_price=Decimal("0"),
                 liability=Decimal("0"),
                 available=Decimal("0"),
                 baseincrement=Decimal("0"),
@@ -1477,14 +1481,14 @@ class KCN:
         """Replace BTC-USDT to BTC."""
         return Ok(data.replace("-USDT", ""))
 
-    def update_last_price_to_book(
+    def update_price_to_book(
         self: Self,
         ticker: str,
         price: Decimal,
     ) -> Result[None, Exception]:
         """."""
         try:
-            self.book[ticker].last_price = price
+            self.book[ticker].price = price
         except IndexError as exc:
             return Err(exc)
         return Ok(None)
@@ -1499,7 +1503,7 @@ class KCN:
             for symbol_name in self.replace_quote_in_symbol_name(data.symbol)
             # update last price
             for price_decimal in self.data_to_decimal(data.price or "")
-            for _ in self.update_last_price_to_book(symbol_name, price_decimal)
+            for _ in self.update_price_to_book(symbol_name, price_decimal)
             # send data to db
             for _ in await self.insert_data_to_db(data)
         ):
@@ -1590,7 +1594,15 @@ class KCN:
             Ok(symbol) for symbol in self.replace_quote_in_symbol_name(data.data.symbol)
         ):
             case Ok(symbol):
-                logger.info(f"{symbol}:{data.data.candles[2]}")
+                close_price = Decimal(data.data.candles[2])
+                if symbol in self.book:
+                    if close_price < self.book[symbol].down_price:
+                        self.fill_new_price(close_price, symbol)
+                        # need switch sell order to down
+                        logger.info(f"{symbol}:new down:{close_price}")
+                    if close_price > self.book[symbol].up_price:
+                        self.fill_new_price(close_price, symbol)
+                        logger.info(f"{symbol}:new up:{close_price}")
         return Ok(None)
 
     async def processing_ws_candle(
@@ -2253,7 +2265,7 @@ class KCN:
             for _ in self.fill_all_price_increment(ticket_for_fill)
         )
 
-    def filter_ticket_by_book_last_price(
+    def filter_ticket_by_book_price(
         self: Self,
         data: ApiV1MarketAllTickers.Res,
     ) -> Result[list[ApiV1MarketAllTickers.Res.Data.Ticker], Exception]:
@@ -2266,19 +2278,68 @@ class KCN:
             ]
         )
 
-    def fill_one_ticket_last_price(
+    def fill_one_ticket_price(
         self: Self,
         symbol: str,
-        last_price: Decimal,
+        price: Decimal,
     ) -> Result[None, Exception]:
         """."""
         try:
-            self.book[symbol].last_price = last_price
+            self.book[symbol].price = price
         except IndexError as exc:
             return Err(exc)
         return Ok(None)
 
-    def fill_all_last_price(
+    def fill_one_ticket_up_price(
+        self: Self,
+        symbol: str,
+        price: Decimal,
+    ) -> Result[None, Exception]:
+        """."""
+        try:
+            self.book[symbol].up_price = price
+        except IndexError as exc:
+            return Err(exc)
+        return Ok(None)
+
+    def fill_one_ticket_down_price(
+        self: Self,
+        symbol: str,
+        price: Decimal,
+    ) -> Result[None, Exception]:
+        """."""
+        try:
+            self.book[symbol].down_price = price
+        except IndexError as exc:
+            return Err(exc)
+        return Ok(None)
+
+    def fill_new_price(
+        self: Self, price_decimal: Decimal, symbol: str
+    ) -> Result[str, Exception]:
+        """."""
+        return do(
+            Ok(_)
+            # default price
+            for _ in self.fill_one_ticket_price(
+                symbol,
+                price_decimal,
+            )
+            # up price
+            for up_price in self.plus_1_percent(price_decimal)
+            for _ in self.fill_one_ticket_up_price(
+                symbol,
+                up_price,
+            )
+            # down price
+            for down_price in self.minus_1_percent(price_decimal)
+            for _ in self.fill_one_ticket_down_price(
+                symbol,
+                down_price,
+            )
+        )
+
+    def fill_all_price(
         self: Self,
         data: list[ApiV1MarketAllTickers.Res.Data.Ticker],
     ) -> Result[None, Exception]:
@@ -2286,25 +2347,22 @@ class KCN:
         for ticket in data:
             match do(
                 Ok(None)
-                for last_price_decimal in self.data_to_decimal(ticket.buy or "")
-                for replaced_symbol in self.replace_quote_in_symbol_name(ticket.symbol)
-                for _ in self.fill_one_ticket_last_price(
-                    replaced_symbol,
-                    last_price_decimal,
-                )
+                for price_decimal in self.data_to_decimal(ticket.buy or "")
+                for symbol in self.replace_quote_in_symbol_name(ticket.symbol)
+                for _ in self.fill_new_price(price_decimal, symbol)
             ):
                 case Err(exc):
                     return Err(exc)
 
         return Ok(None)
 
-    async def fill_last_price(self: Self) -> Result[None, Exception]:
+    async def fill_price(self: Self) -> Result[None, Exception]:
         """Fill last price for first order init."""
         return await do_async(
             Ok(None)
             for market_ticket in await self.get_api_v1_market_all_tickers()
-            for ticket_for_fill in self.filter_ticket_by_book_last_price(market_ticket)
-            for _ in self.fill_all_last_price(ticket_for_fill)
+            for ticket_for_fill in self.filter_ticket_by_book_price(market_ticket)
+            for _ in self.fill_all_price(ticket_for_fill)
         )
 
     def divide(
@@ -2342,19 +2400,19 @@ class KCN:
             Ok(
                 OrderParam(
                     side="sell",
-                    price=last_price_str,
+                    price=price_str,
                     size=size_str,
                 ),
             )
-            for last_price in self.plus_1_percent(self.book[ticket].last_price)
-            for last_price_quantize in self.quantize_plus(
-                last_price,
+            for price in self.plus_1_percent(self.book[ticket].price)
+            for price_quantize in self.quantize_plus(
+                price,
                 self.book[ticket].priceincrement,
             )
-            for last_price_str in self.decimal_to_str(last_price_quantize)
+            for price_str in self.decimal_to_str(price_quantize)
             for raw_size in self.divide(
                 self.BASE_KEEP * Decimal("1.01"),
-                last_price_quantize,
+                price_quantize,
             )
             for size in self.quantize_plus(
                 raw_size,
@@ -2372,17 +2430,17 @@ class KCN:
             Ok(
                 OrderParam(
                     side="buy",
-                    price=last_price_str,
+                    price=price_str,
                     size=size_str,
                 ),
             )
-            for last_price in self.minus_1_percent(self.book[ticket].last_price)
-            for last_price_quantize in self.quantize_minus(
-                last_price,
+            for price in self.minus_1_percent(self.book[ticket].price)
+            for price_quantize in self.quantize_minus(
+                price,
                 self.book[ticket].priceincrement,
             )
-            for last_price_str in self.decimal_to_str(last_price_quantize)
-            for raw_size in self.divide(self.BASE_KEEP, last_price_quantize)
+            for price_str in self.decimal_to_str(price_quantize)
+            for raw_size in self.divide(self.BASE_KEEP, price_quantize)
             for size in self.quantize_plus(
                 raw_size,
                 self.book[ticket].baseincrement,
@@ -2484,7 +2542,7 @@ class KCN:
             for _ in await self.massive_delete_order_by_symbol()
             for _ in await self.sleep_to(sleep_on=5)
             for _ in await self.fill_increment()
-            for _ in await self.fill_last_price()
+            for _ in await self.fill_price()
             for _ in self.logger_success(self.book)
         )
 
@@ -2503,13 +2561,13 @@ class KCN:
                         match await do_async(
                             Ok(_)
                             for _ in await self.sleep_to(sleep_on=0.1)
-                            for last_price_quantize in self.quantize_minus(
-                                self.book[asset].last_price,
+                            for price_quantize in self.quantize_minus(
+                                self.book[asset].price,
                                 self.book[asset].priceincrement,
                             )
                             for raw_size in self.divide(
                                 base_size,
-                                last_price_quantize,
+                                price_quantize,
                             )
                             for size in self.quantize_plus(
                                 raw_size,
@@ -2630,7 +2688,7 @@ class KCN:
             tasks = [
                 tg.create_task(self.position()),
                 tg.create_task(self.candle()),
-                tg.create_task(self.repay_assets()),
+                # tg.create_task(self.repay_assets()),
             ]
 
         for task in tasks:
