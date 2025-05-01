@@ -1685,7 +1685,7 @@ class KCN:
         """Infinity loop for listen candle msgs."""
         logger.warning("listen_candle_event")
         async for msg in ws_inst:
-            asyncio.create_task(self.processing_ws_candle(msg))
+            await self.processing_ws_candle(msg)
 
         return Ok(None)
 
