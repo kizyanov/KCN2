@@ -1570,7 +1570,7 @@ class KCN:
                 data.data.debtList[symbol]
             ):
                 logger.info(
-                    f"Update liability:{symbol} from {self.book[symbol].liability} to {data.data.debtList[symbol]}"
+                    f"Update liability:{symbol}\t from {self.book[symbol].liability} to {data.data.debtList[symbol]}"
                 )
                 self.book[symbol].liability = Decimal(data.data.debtList[symbol])
             if symbol in data.data.assetList and self.book[symbol].available != Decimal(
@@ -2179,29 +2179,6 @@ class KCN:
                 logger.exception(exc)
         return Ok(None)
 
-    async def start_up_orders(self: Self) -> Result[None, Exception]:
-        """Make init orders."""
-        match await do_async(
-            Ok(margin_account)
-            # await sync position
-            for _ in await self.sleep_to(sleep_on=60)
-            for margin_account in await self.get_api_v3_margin_accounts(
-                params={
-                    "quoteCurrency": "USDT",
-                },
-            )
-        ):
-            case Ok(margin_account):
-                for account in margin_account.data.accounts:
-                    if account.currency in self.book:
-                        match await self.make_sell_margin_order(account.currency):
-                            case Err(exc):
-                                logger.exception(exc)
-            case Err(exc):
-                logger.exception(exc)
-
-        return Ok(None)
-
     def fill_one_symbol_base_increment(
         self: Self,
         symbol: str,
@@ -2707,6 +2684,7 @@ class KCN:
             tasks = [
                 tg.create_task(self.position()),
                 tg.create_task(self.candle()),
+                tg.create_task(self.alertest()),
             ]
 
         for task in tasks:
