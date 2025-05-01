@@ -1455,10 +1455,10 @@ class KCN:
             for ticket in self.ALL_CURRENCY
             if isinstance(ticket, str)
         }
-        self.book_orders: dict[str, dict[str, list[str]]] = {
+        self.book_orders: dict[str, dict[str, str]] = {
             ticket: {
-                "sell": [],
-                "buy": [],
+                "sell": "",
+                "buy": "",
             }
             for ticket in self.ALL_CURRENCY
             if isinstance(ticket, str)
@@ -1595,30 +1595,44 @@ class KCN:
         ):
             case Ok(symbol):
                 close_price = Decimal(data.data.candles[2])
-                if symbol in self.book:
-                    if (
-                        close_price < self.book[symbol].down_price
-                        or close_price > self.book[symbol].up_price
+                if symbol in self.book and (
+                    close_price < self.book[symbol].down_price
+                    or close_price > self.book[symbol].up_price
+                ):
+                    # complete older buy order or complete older sell order
+                    self.fill_new_price(close_price, symbol)
+
+                    if symbol in self.book_orders:
+                        for close in [
+                            self.book_orders[symbol]["sell"],
+                            self.book_orders[symbol]["buy"],
+                        ]:
+                            if close != "":
+                                match await do_async(
+                                    Ok(_)
+                                    for _ in await self.delete_api_v3_hf_margin_orders(
+                                        close, data.data.symbol
+                                    )
+                                ):
+                                    case Err(exc):
+                                        logger.exception(exc)
+
+                    match await do_async(
+                        Ok(_)
+                        for _ in await self.make_sell_margin_order(data.data.symbol)
                     ):
-                        # complete older buy order or complete older sell order
-                        self.fill_new_price(close_price, symbol)
-                        # need switch sell order to down
+                        case Err(exc):
+                            logger.exception(exc)
 
-                        # match await do_async(
-                        #     Ok(_) for _ in self.make_sell_margin_order(data.data.symbol)
-                        # ):
-                        #     case Err(exc):
-                        #         logger.exception(exc)
+                    if self.book[symbol].liability != 0:
+                        match await do_async(
+                            Ok(_)
+                            for _ in await self.make_buy_margin_order(data.data.symbol)
+                        ):
+                            case Err(exc):
+                                logger.exception(exc)
 
-                        # if self.book[symbol].liability != 0:
-                        #     match await do_async(
-                        #         Ok(_)
-                        #         for _ in self.make_buy_margin_order(data.data.symbol)
-                        #     ):
-                        #         case Err(exc):
-                        #             logger.exception(exc)
-
-                        logger.info(f"{symbol}:new price:{close_price}")
+                    logger.info(f"{symbol}:new price:{close_price}")
 
         return Ok(None)
 
@@ -2124,7 +2138,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Save sell order id."""
         if symbol in self.book:
-            self.book_orders[symbol]["sell"].append(order_id)
+            self.book_orders[symbol]["sell"] = order_id
         return Ok(None)
 
     def save_buy_order_id(
@@ -2134,7 +2148,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Save buy order id."""
         if symbol in self.book:
-            self.book_orders[symbol]["buy"].append(order_id)
+            self.book_orders[symbol]["buy"] = order_id
         return Ok(None)
 
     async def make_sell_margin_order(
@@ -2624,27 +2638,23 @@ class KCN:
         """."""
         symbol = data.data.symbol.replace("-USDT", "")
         if data.data.side == "sell" and symbol in self.book_orders:
-            orders_for_close = self.book_orders[symbol]["sell"][:-1]
-            self.book_orders[symbol]["sell"][:-1] = []
-
-            for close_order in orders_for_close:
-                match await do_async(
-                    Ok(_)
-                    for _ in await self.delete_api_v3_hf_margin_orders(
-                        close_order,
-                        data.data.symbol,
-                    )
-                    for _ in await self.post_api_v3_margin_repay(
-                        data={
-                            "currency": symbol,
-                            "size": float(data.data.size or 1),
-                            "isIsolated": False,
-                            "isHf": True,
-                        }
-                    )
-                ):
-                    case Err(exc):
-                        logger.exception(exc)
+            match await do_async(
+                Ok(_)
+                for _ in await self.delete_api_v3_hf_margin_orders(
+                    self.book_orders[symbol]["sell"],
+                    data.data.symbol,
+                )
+                for _ in await self.post_api_v3_margin_repay(
+                    data={
+                        "currency": symbol,
+                        "size": float(data.data.size or 1),
+                        "isIsolated": False,
+                        "isHf": True,
+                    }
+                )
+            ):
+                case Err(exc):
+                    logger.exception(exc)
         return Ok(None)
 
     async def close_redundant_orders(self: Self) -> Result[None, Exception]:
@@ -2698,8 +2708,6 @@ class KCN:
             tasks = [
                 tg.create_task(self.position()),
                 tg.create_task(self.candle()),
-                # tg.create_task(self.start_up_orders()),
-                # tg.create_task(self.repay_assets()),
             ]
 
         for task in tasks:
