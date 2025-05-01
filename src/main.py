@@ -1612,7 +1612,6 @@ class KCN:
         match await do_async(
             Ok(None)
             for value in self.parse_bytes_to_dict(msg)
-            for _ in self.logger_info(value)
             for data_dataclass in self.convert_to_dataclass_from_dict(
                 KLines.Res,
                 value,
