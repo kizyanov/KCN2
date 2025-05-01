@@ -1501,48 +1501,9 @@ class KCN:
         match await do_async(
             Ok(symbol_name)
             for symbol_name in self.replace_quote_in_symbol_name(data.symbol)
-            # update last price
-            for price_decimal in self.data_to_decimal(data.price or "")
-            for _ in self.update_price_to_book(symbol_name, price_decimal)
             # send data to db
             for _ in await self.insert_data_to_db(data)
         ):
-            case Ok(symbol_name):
-                match await do_async(
-                    Ok(api_v3_margin_accounts)
-                    for api_v3_margin_accounts in await self.get_api_v3_margin_accounts(
-                        params={
-                            "quoteCurrency": "USDT",
-                        },
-                    )
-                ):
-                    case Ok(api_v3_margin_accounts):
-                        for account in api_v3_margin_accounts.data.accounts:
-                            if symbol_name == account.currency:
-                                if Decimal(account.liability) != 0:
-                                    # check exist liabilities
-                                    match await do_async(
-                                        Ok(_)
-                                        for _ in await self.make_buy_margin_order(
-                                            symbol_name
-                                        )
-                                    ):
-                                        case Err(exc):
-                                            logger.exception(exc)
-
-                                if data.side == "sell":
-                                    # create new orders
-                                    match await do_async(
-                                        Ok(_)
-                                        for _ in await self.make_sell_margin_order(
-                                            symbol_name
-                                        )
-                                    ):
-                                        case Err(exc):
-                                            logger.exception(exc)
-                    case Err(exc):
-                        logger.exception(exc)
-
             case Err(exc):
                 logger.exception(exc)
         return Ok(None)
@@ -1554,8 +1515,6 @@ class KCN:
         """."""
         if data.data.orderType == "limit":
             match data.data.type:
-                case "open":  # appear new order
-                    asyncio.create_task(self.close_older_sell_order(data))
                 case "filled":  # complete fill order
                     asyncio.create_task(self.order_filled(data.data))
         return Ok(None)
@@ -2681,29 +2640,29 @@ class KCN:
                     case Ok(active_orders):
                         if active_orders.data:
                             logger.warning(active_orders.data)
-                            for orde in active_orders.data:
-                                ss = orde.symbol.replace("-USDT", "")
-                                if ss in self.book_orders:
-                                    if orde.id not in self.book_orders[ss][orde.side]:
-                                        match await do_async(
-                                            Ok(_)
-                                            for _ in await self.delete_api_v3_hf_margin_orders(
-                                                orde.id,
-                                                orde.symbol,
-                                            )
-                                        ):
-                                            case Err(exc):
-                                                logger.exception(exc)
-                                else:
-                                    match await do_async(
-                                        Ok(_)
-                                        for _ in await self.delete_api_v3_hf_margin_orders(
-                                            orde.id,
-                                            orde.symbol,
-                                        )
-                                    ):
-                                        case Err(exc):
-                                            logger.exception(exc)
+                            # for orde in active_orders.data:
+                            #     ss = orde.symbol.replace("-USDT", "")
+                            #     if ss in self.book_orders:
+                            #         if orde.id not in self.book_orders[ss][orde.side]:
+                            #             match await do_async(
+                            #                 Ok(_)
+                            #                 for _ in await self.delete_api_v3_hf_margin_orders(
+                            #                     orde.id,
+                            #                     orde.symbol,
+                            #                 )
+                            #             ):
+                            #                 case Err(exc):
+                            #                     logger.exception(exc)
+                            #     else:
+                            #         match await do_async(
+                            #             Ok(_)
+                            #             for _ in await self.delete_api_v3_hf_margin_orders(
+                            #                 orde.id,
+                            #                 orde.symbol,
+                            #             )
+                            #         ):
+                            #             case Err(exc):
+                            #                 logger.exception(exc)
 
                     case Err(exc):
                         logger.exception(exc)
@@ -2715,8 +2674,10 @@ class KCN:
             tasks = [
                 tg.create_task(self.position()),
                 tg.create_task(self.candle()),
+                tg.create_task(self.matching()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.repay_assets()),
+                tg.create_task(self.close_redundant_orders()),
             ]
 
         for task in tasks:
