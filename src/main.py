@@ -1611,23 +1611,22 @@ class KCN:
                                 match await do_async(
                                     Ok(_)
                                     for _ in await self.delete_api_v3_hf_margin_orders(
-                                        close, data.data.symbol
+                                        close,
+                                        data.data.symbol,
                                     )
                                 ):
                                     case Err(exc):
                                         logger.exception(exc)
 
                     match await do_async(
-                        Ok(_)
-                        for _ in await self.make_sell_margin_order(data.data.symbol)
+                        Ok(_) for _ in await self.make_sell_margin_order(symbol)
                     ):
                         case Err(exc):
                             logger.exception(exc)
 
                     if self.book[symbol].liability != 0:
                         match await do_async(
-                            Ok(_)
-                            for _ in await self.make_buy_margin_order(data.data.symbol)
+                            Ok(_) for _ in await self.make_buy_margin_order(symbol)
                         ):
                             case Err(exc):
                                 logger.exception(exc)
