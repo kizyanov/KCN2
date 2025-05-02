@@ -1555,7 +1555,7 @@ class KCN:
                 if symbol in self.book:
                     close_price = Decimal(data.data.candles[2])
                     bs = self.book[symbol]
-                    if bs.down_price >= close_price >= bs.up_price:
+                    if bs.down_price >= close_price or close_price >= bs.up_price:
                         self.fill_new_price(close_price, symbol)
 
                         if bs.liability != 0:
