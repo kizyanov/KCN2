@@ -2581,30 +2581,6 @@ class KCN:
                     case Ok(active_orders):
                         if active_orders.data:
                             logger.warning(active_orders.data)
-                            # for orde in active_orders.data:
-                            #     ss = orde.symbol.replace("-USDT", "")
-                            #     if ss in self.book_orders:
-                            #         if orde.id not in self.book_orders[ss][orde.side]:
-                            #             match await do_async(
-                            #                 Ok(_)
-                            #                 for _ in await self.delete_api_v3_hf_margin_orders(
-                            #                     orde.id,
-                            #                     orde.symbol,
-                            #                 )
-                            #             ):
-                            #                 case Err(exc):
-                            #                     logger.exception(exc)
-                            #     else:
-                            #         match await do_async(
-                            #             Ok(_)
-                            #             for _ in await self.delete_api_v3_hf_margin_orders(
-                            #                 orde.id,
-                            #                 orde.symbol,
-                            #             )
-                            #         ):
-                            #             case Err(exc):
-                            #                 logger.exception(exc)
-
                     case Err(exc):
                         logger.exception(exc)
         return Ok(None)
