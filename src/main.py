@@ -2244,32 +2244,40 @@ class KCN:
 
     def fill_new_price(
         self: Self,
-        price_decimal: Decimal,
+        init_price_decimal: Decimal,
         symbol: str,
     ) -> Result[str, Exception]:
         """."""
         return do(
             Ok(_)
             # default price
-            for price_quantize in self.quantize_plus(
-                price_decimal,
+            for default_price_quantize in self.quantize_plus(
+                init_price_decimal,
                 self.book[symbol].priceincrement,
             )
             for _ in self.fill_one_ticket_price(
                 symbol,
-                price_quantize,
+                default_price_quantize,
             )
             # up price
-            for up_price in self.plus_1_percent(price_quantize)
+            for up_price in self.plus_1_percent(init_price_decimal)
+            for up_price_quantize in self.quantize_minus(
+                up_price,
+                self.book[symbol].priceincrement,
+            )
             for _ in self.fill_one_ticket_up_price(
                 symbol,
-                up_price,
+                up_price_quantize,
             )
             # down price
-            for down_price in self.minus_1_percent(price_quantize)
+            for down_price in self.minus_1_percent(init_price_decimal)
+            for down_price_quantize in self.quantize_minus(
+                down_price,
+                self.book[symbol].priceincrement,
+            )
             for _ in self.fill_one_ticket_down_price(
                 symbol,
-                down_price,
+                down_price_quantize,
             )
         )
 
@@ -2338,14 +2346,12 @@ class KCN:
                     size=size_str,
                 ),
             )
-            for price_quantize in self.quantize_plus(
+            for price_str in self.decimal_to_str(
                 self.book[ticket].up_price,
-                self.book[ticket].priceincrement,
             )
-            for price_str in self.decimal_to_str(price_quantize)
             for raw_size in self.divide(
                 self.BASE_KEEP * Decimal("1.01"),
-                price_quantize,
+                self.book[ticket].up_price,
             )
             for size in self.quantize_plus(
                 raw_size,
@@ -2367,12 +2373,13 @@ class KCN:
                     size=size_str,
                 ),
             )
-            for price_quantize in self.quantize_minus(
+            for price_str in self.decimal_to_str(
                 self.book[ticket].down_price,
-                self.book[ticket].priceincrement,
             )
-            for price_str in self.decimal_to_str(price_quantize)
-            for raw_size in self.divide(self.BASE_KEEP, price_quantize)
+            for raw_size in self.divide(
+                self.BASE_KEEP,
+                self.book[ticket].down_price,
+            )
             for size in self.quantize_plus(
                 raw_size,
                 self.book[ticket].baseincrement,
@@ -2492,13 +2499,9 @@ class KCN:
                     match await do_async(
                         Ok(_)
                         for _ in await self.sleep_to(sleep_on=0.1)
-                        for price_quantize in self.quantize_minus(
-                            self.book[asset].price,
-                            self.book[asset].priceincrement,
-                        )
                         for raw_size in self.divide(
                             base_size,
-                            price_quantize,
+                            self.book[asset].down_price,
                         )
                         for size in self.quantize_plus(
                             raw_size,
