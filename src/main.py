@@ -2260,7 +2260,9 @@ class KCN:
                 default_price_quantize,
             )
             # up price
-            for up_price in self.plus_1_percent(init_price_decimal)
+            for up_price in self.plus_1_percent(
+                init_price_decimal,
+            )
             for up_price_quantize in self.quantize_minus(
                 up_price,
                 self.book[symbol].priceincrement,
@@ -2270,7 +2272,9 @@ class KCN:
                 up_price_quantize,
             )
             # down price
-            for down_price in self.minus_1_percent(init_price_decimal)
+            for down_price in self.minus_1_percent(
+                init_price_decimal,
+            )
             for down_price_quantize in self.quantize_minus(
                 down_price,
                 self.book[symbol].priceincrement,
