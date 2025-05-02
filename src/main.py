@@ -1555,68 +1555,9 @@ class KCN:
             case Ok(symbol):
                 if symbol in self.book:
                     close_price = Decimal(data.data.candles[2])
-                    if close_price < self.book[symbol].down_price:
-                        # complete older buy order
+                    bs = self.book[symbol]
+                    if bs.down_price >= close_price >= bs.up_price:
                         self.fill_new_price(close_price, symbol)
-                        if symbol in self.book_orders:
-                            for close in [self.book_orders[symbol]["sell"]]:
-                                if close != "":
-                                    match await do_async(
-                                        Ok(_)
-                                        for _ in await self.delete_api_v3_hf_margin_orders(
-                                            close,
-                                            data.data.symbol,
-                                        )
-                                    ):
-                                        case Err(exc):
-                                            logger.exception(exc)
-
-                        match await do_async(
-                            Ok(_) for _ in await self.make_sell_margin_order(symbol)
-                        ):
-                            case Err(exc):
-                                logger.exception(exc)
-
-                        if self.book[symbol].liability != 0:
-                            match await do_async(
-                                Ok(_) for _ in await self.make_buy_margin_order(symbol)
-                            ):
-                                case Err(exc):
-                                    logger.exception(exc)
-
-                        logger.info(f"{symbol}:new price:{close_price}")
-
-                    elif close_price > self.book[symbol].up_price:
-                        # complete older sell order
-                        self.fill_new_price(close_price, symbol)
-
-                        if symbol in self.book_orders:
-                            for close in [self.book_orders[symbol]["buy"]]:
-                                if close != "":
-                                    match await do_async(
-                                        Ok(_)
-                                        for _ in await self.delete_api_v3_hf_margin_orders(
-                                            close,
-                                            data.data.symbol,
-                                        )
-                                    ):
-                                        case Err(exc):
-                                            logger.exception(exc)
-
-                        match await do_async(
-                            Ok(_) for _ in await self.make_sell_margin_order(symbol)
-                        ):
-                            case Err(exc):
-                                logger.exception(exc)
-
-                        if self.book[symbol].liability != 0:
-                            match await do_async(
-                                Ok(_) for _ in await self.make_buy_margin_order(symbol)
-                            ):
-                                case Err(exc):
-                                    logger.exception(exc)
-
-                        logger.info(f"{symbol}:new price:{close_price}")
 
         return Ok(None)
 
