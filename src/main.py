@@ -2076,6 +2076,33 @@ class KCN:
             self.book_orders[symbol]["sell"] = order_id
         return Ok(None)
 
+    async def start_up_orders(self: Self) -> Result[None, Exception]:
+        """Make init orders."""
+        match await do_async(
+            Ok(margin_account)
+            for _ in await self.sleep_to(sleep_on=5)
+            for margin_account in await self.get_api_v3_margin_accounts(
+                params={
+                    "quoteCurrency": "USDT",
+                },
+            )
+        ):
+            case Ok(margin_account):
+                for account in margin_account.data.accounts:
+                    if account.currency in self.book:
+                        if Decimal(account.liability) != 0:
+                            match await self.make_buy_margin_order(account.currency):
+                                case Err(exc):
+                                    logger.exception(exc)
+
+                        match await self.make_sell_margin_order(account.currency):
+                            case Err(exc):
+                                logger.exception(exc)
+            case Err(exc):
+                logger.exception(exc)
+
+        return Ok(None)
+
     def save_buy_order_id(
         self: Self,
         symbol: str,
@@ -2633,6 +2660,7 @@ class KCN:
                 tg.create_task(self.matching()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.repay_assets()),
+                tg.create_task(self.start_up_orders()),
                 tg.create_task(self.close_redundant_orders()),
             ]
 
