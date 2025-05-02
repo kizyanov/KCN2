@@ -1499,8 +1499,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Event when order full filled."""
         match await do_async(
-            Ok(symbol_name)
-            for symbol_name in self.replace_quote_in_symbol_name(data.symbol)
+            Ok(_)
             # send data to db
             for _ in await self.insert_data_to_db(data)
         ):
@@ -1555,69 +1554,21 @@ class KCN:
             case Ok(symbol):
                 if symbol in self.book:
                     close_price = Decimal(data.data.candles[2])
-                    if close_price < self.book[symbol].down_price:
-                        # complete older buy order
+                    bs = self.book[symbol]
+                    if bs.down_price >= close_price >= bs.up_price:
                         self.fill_new_price(close_price, symbol)
-                        if symbol in self.book_orders:
-                            for close in [self.book_orders[symbol]["sell"]]:
-                                if close != "":
-                                    match await do_async(
-                                        Ok(_)
-                                        for _ in await self.delete_api_v3_hf_margin_orders(
-                                            close,
-                                            data.data.symbol,
-                                        )
-                                    ):
-                                        case Err(exc):
-                                            logger.exception(exc)
 
-                        match await do_async(
-                            Ok(_) for _ in await self.make_sell_margin_order(symbol)
-                        ):
-                            case Err(exc):
-                                logger.exception(exc)
-
-                        if self.book[symbol].liability != 0:
+                        if bs.liability != 0:
                             match await do_async(
                                 Ok(_) for _ in await self.make_buy_margin_order(symbol)
                             ):
                                 case Err(exc):
                                     logger.exception(exc)
-
-                        logger.info(f"{symbol}:new price:{close_price}")
-
-                    elif close_price > self.book[symbol].up_price:
-                        # complete older sell order
-                        self.fill_new_price(close_price, symbol)
-
-                        if symbol in self.book_orders:
-                            for close in [self.book_orders[symbol]["buy"]]:
-                                if close != "":
-                                    match await do_async(
-                                        Ok(_)
-                                        for _ in await self.delete_api_v3_hf_margin_orders(
-                                            close,
-                                            data.data.symbol,
-                                        )
-                                    ):
-                                        case Err(exc):
-                                            logger.exception(exc)
-
                         match await do_async(
                             Ok(_) for _ in await self.make_sell_margin_order(symbol)
                         ):
                             case Err(exc):
                                 logger.exception(exc)
-
-                        if self.book[symbol].liability != 0:
-                            match await do_async(
-                                Ok(_) for _ in await self.make_buy_margin_order(symbol)
-                            ):
-                                case Err(exc):
-                                    logger.exception(exc)
-
-                        logger.info(f"{symbol}:new price:{close_price}")
-
         return Ok(None)
 
     async def processing_ws_candle(
@@ -2125,6 +2076,33 @@ class KCN:
             self.book_orders[symbol]["sell"] = order_id
         return Ok(None)
 
+    async def start_up_orders(self: Self) -> Result[None, Exception]:
+        """Make init orders."""
+        match await do_async(
+            Ok(margin_account)
+            for _ in await self.sleep_to(sleep_on=5)
+            for margin_account in await self.get_api_v3_margin_accounts(
+                params={
+                    "quoteCurrency": "USDT",
+                },
+            )
+        ):
+            case Ok(margin_account):
+                for account in margin_account.data.accounts:
+                    if account.currency in self.book:
+                        if Decimal(account.liability) != 0:
+                            match await self.make_buy_margin_order(account.currency):
+                                case Err(exc):
+                                    logger.exception(exc)
+
+                        match await self.make_sell_margin_order(account.currency):
+                            case Err(exc):
+                                logger.exception(exc)
+            case Err(exc):
+                logger.exception(exc)
+
+        return Ok(None)
+
     def save_buy_order_id(
         self: Self,
         symbol: str,
@@ -2303,32 +2281,44 @@ class KCN:
 
     def fill_new_price(
         self: Self,
-        price_decimal: Decimal,
+        init_price_decimal: Decimal,
         symbol: str,
     ) -> Result[str, Exception]:
         """."""
         return do(
             Ok(_)
             # default price
-            for price_quantize in self.quantize_plus(
-                price_decimal,
+            for default_price_quantize in self.quantize_plus(
+                init_price_decimal,
                 self.book[symbol].priceincrement,
             )
             for _ in self.fill_one_ticket_price(
                 symbol,
-                price_quantize,
+                default_price_quantize,
             )
             # up price
-            for up_price in self.plus_1_percent(price_quantize)
+            for up_price in self.plus_1_percent(
+                init_price_decimal,
+            )
+            for up_price_quantize in self.quantize_minus(
+                up_price,
+                self.book[symbol].priceincrement,
+            )
             for _ in self.fill_one_ticket_up_price(
                 symbol,
-                up_price,
+                up_price_quantize,
             )
             # down price
-            for down_price in self.minus_1_percent(price_quantize)
+            for down_price in self.minus_1_percent(
+                init_price_decimal,
+            )
+            for down_price_quantize in self.quantize_minus(
+                down_price,
+                self.book[symbol].priceincrement,
+            )
             for _ in self.fill_one_ticket_down_price(
                 symbol,
-                down_price,
+                down_price_quantize,
             )
         )
 
@@ -2397,14 +2387,12 @@ class KCN:
                     size=size_str,
                 ),
             )
-            for price_quantize in self.quantize_plus(
+            for price_str in self.decimal_to_str(
                 self.book[ticket].up_price,
-                self.book[ticket].priceincrement,
             )
-            for price_str in self.decimal_to_str(price_quantize)
             for raw_size in self.divide(
                 self.BASE_KEEP * Decimal("1.01"),
-                price_quantize,
+                self.book[ticket].up_price,
             )
             for size in self.quantize_plus(
                 raw_size,
@@ -2426,12 +2414,13 @@ class KCN:
                     size=size_str,
                 ),
             )
-            for price_quantize in self.quantize_minus(
+            for price_str in self.decimal_to_str(
                 self.book[ticket].down_price,
-                self.book[ticket].priceincrement,
             )
-            for price_str in self.decimal_to_str(price_quantize)
-            for raw_size in self.divide(self.BASE_KEEP, price_quantize)
+            for raw_size in self.divide(
+                self.BASE_KEEP,
+                self.book[ticket].down_price,
+            )
             for size in self.quantize_plus(
                 raw_size,
                 self.book[ticket].baseincrement,
@@ -2551,13 +2540,9 @@ class KCN:
                     match await do_async(
                         Ok(_)
                         for _ in await self.sleep_to(sleep_on=0.1)
-                        for price_quantize in self.quantize_minus(
-                            self.book[asset].price,
-                            self.book[asset].priceincrement,
-                        )
                         for raw_size in self.divide(
                             base_size,
-                            price_quantize,
+                            self.book[asset].down_price,
                         )
                         for size in self.quantize_plus(
                             raw_size,
@@ -2639,31 +2624,29 @@ class KCN:
                 ):
                     case Ok(active_orders):
                         if active_orders.data:
-                            logger.warning(active_orders.data)
-                            # for orde in active_orders.data:
-                            #     ss = orde.symbol.replace("-USDT", "")
-                            #     if ss in self.book_orders:
-                            #         if orde.id not in self.book_orders[ss][orde.side]:
-                            #             match await do_async(
-                            #                 Ok(_)
-                            #                 for _ in await self.delete_api_v3_hf_margin_orders(
-                            #                     orde.id,
-                            #                     orde.symbol,
-                            #                 )
-                            #             ):
-                            #                 case Err(exc):
-                            #                     logger.exception(exc)
-                            #     else:
-                            #         match await do_async(
-                            #             Ok(_)
-                            #             for _ in await self.delete_api_v3_hf_margin_orders(
-                            #                 orde.id,
-                            #                 orde.symbol,
-                            #             )
-                            #         ):
-                            #             case Err(exc):
-                            #                 logger.exception(exc)
-
+                            for orde in active_orders.data:
+                                ss = orde.symbol.replace("-USDT", "")
+                                if ss in self.book_orders:
+                                    if orde.id != self.book_orders[ss][orde.side]:
+                                        match await do_async(
+                                            Ok(_)
+                                            for _ in await self.delete_api_v3_hf_margin_orders(
+                                                orde.id,
+                                                orde.symbol,
+                                            )
+                                        ):
+                                            case Err(exc):
+                                                logger.exception(exc)
+                                else:
+                                    match await do_async(
+                                        Ok(_)
+                                        for _ in await self.delete_api_v3_hf_margin_orders(
+                                            orde.id,
+                                            orde.symbol,
+                                        )
+                                    ):
+                                        case Err(exc):
+                                            logger.exception(exc)
                     case Err(exc):
                         logger.exception(exc)
         return Ok(None)
@@ -2677,6 +2660,7 @@ class KCN:
                 tg.create_task(self.matching()),
                 tg.create_task(self.alertest()),
                 tg.create_task(self.repay_assets()),
+                tg.create_task(self.start_up_orders()),
                 tg.create_task(self.close_redundant_orders()),
             ]
 
