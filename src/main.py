@@ -1499,8 +1499,7 @@ class KCN:
     ) -> Result[None, Exception]:
         """Event when order full filled."""
         match await do_async(
-            Ok(symbol_name)
-            for symbol_name in self.replace_quote_in_symbol_name(data.symbol)
+            Ok(_)
             # send data to db
             for _ in await self.insert_data_to_db(data)
         ):
