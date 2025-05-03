@@ -2624,6 +2624,7 @@ class KCN:
                 ):
                     case Ok(active_orders):
                         if active_orders.data:
+                            logger.warning(active_orders.data)
                             for orde in active_orders.data:
                                 ss = orde.symbol.replace("-USDT", "")
                                 if ss in self.book_orders:
