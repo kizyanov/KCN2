@@ -2300,7 +2300,7 @@ class KCN:
             for up_price in self.plus_1_percent(
                 init_price_decimal,
             )
-            for up_price_quantize in self.quantize_minus(
+            for up_price_quantize in self.quantize_plus(
                 up_price,
                 self.book[symbol].priceincrement,
             )
@@ -2312,7 +2312,7 @@ class KCN:
             for down_price in self.minus_1_percent(
                 init_price_decimal,
             )
-            for down_price_quantize in self.quantize_minus(
+            for down_price_quantize in self.quantize_plus(
                 down_price,
                 self.book[symbol].priceincrement,
             )
@@ -2390,8 +2390,11 @@ class KCN:
             for price_str in self.decimal_to_str(
                 self.book[ticket].up_price,
             )
+            for size_plus_percent in self.plus_1_percent(
+                self.BASE_KEEP,
+            )
             for raw_size in self.divide(
-                self.BASE_KEEP * Decimal("1.01"),
+                size_plus_percent,
                 self.book[ticket].up_price,
             )
             for size in self.quantize_plus(
@@ -2535,7 +2538,7 @@ class KCN:
         """Repay all assets."""
         while True:
             for asset in self.book:
-                base_size = Decimal("1.0")
+                base_size = Decimal("0.01")
                 while True:
                     match await do_async(
                         Ok(_)
@@ -2561,7 +2564,7 @@ class KCN:
                         case Err(_):
                             break
                     base_size *= 2
-            base_size = Decimal("1.0")
+            base_size = Decimal("0.01")
             while True:
                 match await do_async(
                     Ok(_)
