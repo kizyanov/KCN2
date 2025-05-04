@@ -1493,11 +1493,11 @@ class KCN:
             return Err(exc)
         return Ok(None)
 
-    async def order_filled(
+    async def order_matching(
         self: Self,
         data: OrderChangeV2.Res.Data,
     ) -> Result[None, Exception]:
-        """Event when order full filled."""
+        """Event when order parted filled."""
         match await do_async(
             Ok(_)
             # send data to db
@@ -1514,8 +1514,8 @@ class KCN:
         """."""
         if data.data.orderType == "limit":
             match data.data.type:
-                case "filled":  # complete fill order
-                    asyncio.create_task(self.order_filled(data.data))
+                case "match":  # partician fill order
+                    asyncio.create_task(self.order_matching(data.data))
         return Ok(None)
 
     async def event_position(
