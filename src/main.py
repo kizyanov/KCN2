@@ -281,6 +281,7 @@ class OrderChangeV2:
             price: str | None  # fix for market order type
             size: str | None
             matchSize: str | None
+            matchPrice: str | None
 
         data: Data
 
