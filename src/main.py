@@ -281,6 +281,7 @@ class OrderChangeV2:
             price: str | None  # fix for market order type
             size: str | None
             matchSize: str | None
+            matchPrice: str | None
 
         data: Data
 
@@ -2458,8 +2459,8 @@ class KCN:
                     "kucoin",
                     data.symbol,
                     data.side,
-                    data.size or "",
-                    data.price,
+                    data.matchSize or "",
+                    data.matchPrice,
                     datetime.now(),  # noqa: DTZ005
                 )
         except Exception as exc:  # noqa: BLE001
