@@ -2618,7 +2618,7 @@ class KCN:
             for symbol in self.book:
                 match await do_async(
                     Ok(active_orders)
-                    for _ in await self.sleep_to(sleep_on=5)
+                    for _ in await self.sleep_to(sleep_on=1)
                     for active_orders in await self.get_api_v3_hf_margin_orders_active(
                         params={
                             "symbol": f"{symbol}-USDT",
