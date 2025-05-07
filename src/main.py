@@ -2391,11 +2391,8 @@ class KCN:
             for price_str in self.decimal_to_str(
                 self.book[ticket].up_price,
             )
-            for size_plus_percent in self.plus_1_percent(
-                self.BASE_KEEP,
-            )
             for raw_size in self.divide(
-                size_plus_percent,
+                self.BASE_KEEP,
                 self.book[ticket].up_price,
             )
             for size in self.quantize_plus(
