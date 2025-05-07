@@ -1561,7 +1561,10 @@ class KCN:
 
                         if bs.liability != 0:
                             match await do_async(
-                                Ok(_) for _ in await self.make_buy_margin_order(symbol)
+                                Ok(_)
+                                for _ in await self.make_buy_margin_order(
+                                    symbol, bs.liability
+                                )
                             ):
                                 case Err(exc):
                                     logger.exception(exc)
@@ -2041,11 +2044,12 @@ class KCN:
     async def make_buy_margin_order(
         self: Self,
         ticket: str,
+        liability: Decimal,
     ) -> Result[None, Exception]:
         """."""
         match await do_async(
             Ok(order_id)
-            for order_down in self.calc_down(ticket)
+            for order_down in self.calc_down(ticket, liability)
             for params_order_down in self.complete_margin_order(
                 side=order_down.side,
                 symbol=f"{ticket}-USDT",
@@ -2092,7 +2096,12 @@ class KCN:
                 for account in margin_account.data.accounts:
                     if account.currency in self.book:
                         if Decimal(account.liability) != 0:
-                            match await self.make_buy_margin_order(account.currency):
+                            match await self.make_buy_margin_order(
+                                account.currency,
+                                Decimal(
+                                    account.liability,
+                                ),
+                            ):
                                 case Err(exc):
                                     logger.exception(exc)
 
@@ -2405,6 +2414,7 @@ class KCN:
     def calc_down(
         self: Self,
         ticket: str,
+        liability: Decimal,
     ) -> Result[OrderParam, Exception]:
         """Calc down price and size tokens."""
         return do(
@@ -2423,7 +2433,7 @@ class KCN:
                 self.book[ticket].down_price,
             )
             for size in self.quantize_plus(
-                raw_size,
+                min(raw_size, liability),  # min of size default order or liability
                 self.book[ticket].baseincrement,
             )
             for size_str in self.decimal_to_str(size)
