@@ -6,7 +6,7 @@ import socket
 from base64 import b64encode
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import ROUND_DOWN, ROUND_UP, Decimal, InvalidOperation
+from decimal import ROUND_UP, Decimal, InvalidOperation
 from hashlib import sha256
 from hmac import HMAC
 from hmac import new as hmac_new
@@ -217,8 +217,6 @@ class ApiV3MarginAccountsGET:
                 """."""
 
                 currency: str
-                total: str
-                hold: str
                 liability: str
                 available: str
 
@@ -301,24 +299,6 @@ class KLines:
             symbol: str
 
             candles: list[str]
-
-        data: Data
-
-
-@dataclass(frozen=True)
-class MarketCandle:
-    """."""
-
-    @dataclass(frozen=True)
-    class Res:
-        """Parse response request."""
-
-        @dataclass(frozen=True)
-        class Data:
-            """."""
-
-            symbol: str
-            price: str
 
         data: Data
 
@@ -1482,18 +1462,6 @@ class KCN:
         """Replace BTC-USDT to BTC."""
         return Ok(data.replace("-USDT", ""))
 
-    def update_price_to_book(
-        self: Self,
-        ticker: str,
-        price: Decimal,
-    ) -> Result[None, Exception]:
-        """."""
-        try:
-            self.book[ticker].price = price
-        except IndexError as exc:
-            return Err(exc)
-        return Ok(None)
-
     async def order_matching(
         self: Self,
         data: OrderChangeV2.Res.Data,
@@ -1769,18 +1737,6 @@ class KCN:
                 for _ in await self.send_telegram_msg(tlg_msg)
             )
             await asyncio.sleep(60 * 60)
-        return Ok(None)
-
-    async def massive_cancel_order(
-        self: Self,
-        data: list[dict[str, str]],
-    ) -> Result[None, Exception]:
-        """Cancel all order in data list."""
-        for order in data:
-            await self.delete_api_v3_hf_margin_orders(
-                order["id"],
-                order["symbol"],
-            )
         return Ok(None)
 
     def get_msg_for_subscribe_matching(
@@ -2335,14 +2291,6 @@ class KCN:
             return Err(ZeroDivisionError("Divisor cannot be zero"))
         return Ok(divider / divisor)
 
-    def quantize_minus(
-        self: Self,
-        data: Decimal,
-        increment: Decimal,
-    ) -> Result[Decimal, Exception]:
-        """Quantize to down."""
-        return Ok(data.quantize(increment, ROUND_DOWN))
-
     def quantize_plus(
         self: Self,
         data: Decimal,
@@ -2457,19 +2405,6 @@ class KCN:
         except ConnectionRefusedError as exc:
             return Err(exc)
 
-    def filter_open_order_by_symbol(
-        self: Self,
-        data: list[ApiV3HfMarginOrdersActiveGET.Res.Data],
-    ) -> Result[list[dict[str, str]], Exception]:
-        """Filted open order by exist in book."""
-        return Ok(
-            [
-                {"id": order.id, "symbol": order.symbol}
-                for order in data
-                if order.symbol.replace("-USDT", "") in self.book
-            ]
-        )
-
     async def massive_delete_order_by_symbol(self: Self) -> Result[None, Exception]:
         """."""
         for symbol in self.book:
@@ -2559,32 +2494,6 @@ class KCN:
                         break
                 base_size *= 2
 
-        return Ok(None)
-
-    async def close_older_sell_order(
-        self: Self,
-        data: OrderChangeV2.Res,
-    ) -> Result[None, Exception]:
-        """."""
-        symbol = data.data.symbol.replace("-USDT", "")
-        if data.data.side == "sell" and symbol in self.book_orders:
-            match await do_async(
-                Ok(_)
-                for _ in await self.delete_api_v3_hf_margin_orders(
-                    self.book_orders[symbol]["sell"],
-                    data.data.symbol,
-                )
-                for _ in await self.post_api_v3_margin_repay(
-                    data={
-                        "currency": symbol,
-                        "size": float(data.data.size or 1),
-                        "isIsolated": False,
-                        "isHf": True,
-                    }
-                )
-            ):
-                case Err(exc):
-                    logger.exception(exc)
         return Ok(None)
 
     async def close_redundant_orders(self: Self) -> Result[None, Exception]:
