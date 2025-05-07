@@ -12,13 +12,13 @@ dependencies = [
     "asyncpg-stubs==0.30.1",
     "dacite==1.9.2",
     "loguru==0.7.3",
-    "orjson==3.10.16",
+    "orjson==3.10.18",
     "result==0.17.0",
     "websockets==15.0.1",
 ]
 
 [dependency-groups]
-dev = ["mypy==1.15.0", "pytest-cov==6.1.1", "ruff==0.11.6", "vulture==2.14"]
+dev = ["mypy==1.15.0", "pytest-cov==6.1.1", "ruff==0.11.8", "vulture==2.14"]
 
 [tool.mypy]
 exclude = "tests"
