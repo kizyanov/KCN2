@@ -1563,7 +1563,8 @@ class KCN:
                             match await do_async(
                                 Ok(_)
                                 for _ in await self.make_buy_margin_order(
-                                    symbol, bs.liability
+                                    symbol,
+                                    bs.liability,
                                 )
                             ):
                                 case Err(exc):
@@ -2085,7 +2086,7 @@ class KCN:
         """Make init orders."""
         match await do_async(
             Ok(margin_account)
-            for _ in await self.sleep_to(sleep_on=5)
+            for _ in await self.sleep_to(sleep_on=300)
             for margin_account in await self.get_api_v3_margin_accounts(
                 params={
                     "quoteCurrency": "USDT",
@@ -2095,12 +2096,11 @@ class KCN:
             case Ok(margin_account):
                 for account in margin_account.data.accounts:
                     if account.currency in self.book:
-                        if Decimal(account.liability) != 0:
+                        liability = Decimal(account.liability)
+                        if liability != 0:
                             match await self.make_buy_margin_order(
                                 account.currency,
-                                Decimal(
-                                    account.liability,
-                                ),
+                                liability,
                             ):
                                 case Err(exc):
                                     logger.exception(exc)
