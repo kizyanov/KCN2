@@ -2544,10 +2544,10 @@ class KCN:
         """Infinity run tasks."""
         async with asyncio.TaskGroup() as tg:
             tasks = [
-                tg.create_task(self.position()),
-                tg.create_task(self.candle()),
-                tg.create_task(self.matching()),
-                tg.create_task(self.alertest()),
+                # tg.create_task(self.position()),
+                # tg.create_task(self.candle()),
+                # tg.create_task(self.matching()),
+                # tg.create_task(self.alertest()),
                 tg.create_task(self.repay_assets()),
                 tg.create_task(self.close_redundant_orders()),
             ]
